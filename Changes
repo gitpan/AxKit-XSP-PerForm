@@ -1,5 +1,9 @@
 Revision history for Perl extension AxKit::XSP::PerForm.
 
+1.4
+    - Documentation added
+    - More widgets implemented, some changed around a bit.
+
 0.01  Fri Jun  8 16:48:21 2001
 	- original version; created by h2xs 1.19
 

@@ -1,8 +1,8 @@
-# $Id: PerForm.pm,v 1.5 2001/06/27 14:07:28 matt Exp $
+# $Id: PerForm.pm,v 1.7 2001/07/05 20:32:35 matt Exp $
 
 package AxKit::XSP::PerForm;
 
-$VERSION = "1.3_90";
+$VERSION = "1.4";
 
 use AxKit 1.4;
 use Apache;
@@ -16,12 +16,12 @@ $NS = 'http://axkit.org/NS/xsp/perform/v1';
 @EXPORT_TAGLIB = (
     'textfield($name;$default,$width,$maxlength)',
     'password($name;$default,$width,$maxlength)',
-    'submit($name;$value,$image,$alt,$border,$align)',
-    'cancel($name;$value,$image,$alt,$border,$align)',
+    'submit($name;$value,$image,$alt,$border,$align,$goto)',
+    'cancel($name;$value,$image,$alt,$border,$align,$goto)',
     'checkbox($name;$value,$checked,$label)',
     'file_upload($name;$value,$accept)',
     'hidden($name;$value)',
-    'textarea($name;$cols,$rows,$wrap)',
+    'textarea($name;$cols,$rows,$wrap,$default)',
     'single_select($name):itemtag=option',
     'multi_select($name):itemtag=option',
 );
@@ -45,6 +45,7 @@ sub parse_start {
                 { Name => "name", Value => $attribs{name} },
                 { Name => "action", Value => Apache->request->uri },
                 { Name => "method", Value => "POST" },
+                { Name => "enctype", Value => "multipart/form-data" },
             ],
         };
         
@@ -63,10 +64,12 @@ sub parse_start {
         
         return <<EOT
 {        
-use vars qw(\$_form_ctxt \@_submit_buttons \@_cancel_buttons);
+use vars qw(\$_form_ctxt \@_submit_buttons \%_submit_goto \@_cancel_buttons \%_cancel_goto);
 local \$_form_ctxt = { Form => \$cgi->parms, Apache => \$r };
 local \@_submit_buttons;
 local \@_cancel_buttons;
+local \%_submit_goto;
+local \%_cancel_goto;
 start_form_$attribs{name}(\$_form_ctxt, \$cgi->param('__submitting'))
           if defined \&start_form_$attribs{name};
 EOT
@@ -104,6 +107,7 @@ if (\$cgi->param('__submitting')) {
         if (\$cgi->param(\$cancel)) {
             no strict 'refs';
             my \$redirect;
+            \$redirect = \$_cancel_goto{\$cancel};
             \$redirect = "cancel_\${cancel}"->(\$_form_ctxt)
                     if defined \&{"cancel_\${cancel}"};
             if (\$redirect) {
@@ -118,6 +122,7 @@ if (\$cgi->param('__submitting') && !\$_form_ctxt->{_Failed}) {
         if (\$cgi->param(\$submit)) {
             no strict 'refs';
             my \$redirect;
+            \$redirect = \$_submit_goto{\$submit};
             \$redirect = "submit_\${submit}"->(\$_form_ctxt) 
                     if defined \&{"submit_\${submit}"};
             if (\$redirect) {
@@ -178,8 +183,8 @@ sub textfield ($;$$$) {
         };
 }
 
-sub submit ($;$$$$$) {
-    my ($name, $value, $image, $alt, $border, $align) = @_;
+sub submit ($;$$$$$$) {
+    my ($name, $value, $image, $alt, $border, $align, $goto) = @_;
     my ($package) = caller;
     
     no strict 'refs';
@@ -188,6 +193,7 @@ sub submit ($;$$$$$) {
     my $params = $ctxt->{Form};
     
     push @{"${package}::_submit_buttons"}, $name;
+    ${"${package}::_submit_goto"}{$name} = $goto if $goto;
     
     # save
     if ($image) {
@@ -212,8 +218,8 @@ sub submit ($;$$$$$) {
     }
 }
 
-sub cancel ($;$$$$$) {
-    my ($name, $value, $image, $alt, $border, $align) = @_;
+sub cancel ($;$$$$$$) {
+    my ($name, $value, $image, $alt, $border, $align, $goto) = @_;
     my ($package) = caller;
     
     no strict 'refs';
@@ -222,6 +228,7 @@ sub cancel ($;$$$$$) {
     my $params = $ctxt->{Form};
     
     push @{"${package}::_cancel_buttons"}, $name;
+    ${"${package}::_cancel_goto"}{$name} = $goto if $goto;
     
     # save
     if ($image) {
@@ -263,13 +270,6 @@ sub checkbox ($;$$$) {
     my ($name, $value, $checked, $label) = @_;
     my ($package) = caller;
     
-    if ($checked && $checked eq 'yes') {
-        $checked = 1;
-    }
-    elsif ($checked && $checked eq 'no') {
-        $checked = 0;
-    }
-    
     no strict 'refs';
     
     my $ctxt = ${"${package}::_form_ctxt"};
@@ -290,12 +290,23 @@ sub checkbox ($;$$$) {
         }
     }
     
+    $value = 1 unless $value;
+    
     # load
     if (defined &{"${package}::load_${name}"}) {
-        $checked = "${package}::load_${name}"->($ctxt, $params->{$name});
+        my @vals = "${package}::load_${name}"->($ctxt, $params->{$name});
+        $checked = shift @vals;
+        $value = shift @vals if @vals;
     }
     elsif ($params->{'__submitting'}) {
-        $checked = $params->{$name};
+        $checked = 1 if defined($params->{$name});
+    }
+    
+    if ($checked && $checked eq 'yes') {
+        $checked = 1;
+    }
+    elsif ($checked && $checked eq 'no') {
+        $checked = 0;
     }
     
     return {
@@ -382,7 +393,7 @@ sub hidden ($;$) {
     
     if (!defined($value) && defined &{"${package}::load_${name}"}) {
         # load value if not defined
-        $value = "${package}::load_${name}"->($ctxt);
+        $value = "${package}::load_${name}"->($ctxt, $value);
     }
     
     if ($params->{'__submitting'} && ($value ne $params->{$name})) {
@@ -413,7 +424,7 @@ sub multi_select ($) {
     if ($params->{'__submitting'}) {
         if (defined &{"${package}::validate_${name}"}) {
             eval {
-                "${package}::validate_${name}"->($ctxt, $params->{$name});
+                "${package}::validate_${name}"->($ctxt, [$params->get($name)]);
             };
             $error = $@;
             $ctxt->{_Failed}++ if $error;
@@ -424,7 +435,7 @@ sub multi_select ($) {
     # load
     my ($selected, @options);
     if (defined &{"${package}::load_${name}"}) {
-        ($selected, @options) = "${package}::load_${name}"->($ctxt, $params->get($name));
+        ($selected, @options) = "${package}::load_${name}"->($ctxt, [$params->get($name)]);
     }
     
     my %selected = map { $_ => 1 } @$selected;
@@ -497,6 +508,7 @@ sub password ($;$$$) {
 }
 
 sub radio {
+    die "NOT YET IMPLEMENTED";
 }
 
 sub reset ($;$) {
@@ -564,7 +576,58 @@ sub single_select ($) {
     };
 }
 
-sub textarea {
+sub textarea ($;$$$$) {
+    my ($name, $cols, $rows, $wrap, $default) = @_;
+    
+    my ($package) = caller;
+    
+    no strict 'refs';
+    
+    my $ctxt = ${"${package}::_form_ctxt"};
+    
+    my $params = $ctxt->{Form};
+    
+    my $error;
+    
+    # validate
+    if ($params->{'__submitting'}) {
+        if (defined &{"${package}::validate_${name}"}) {
+            eval {
+                "${package}::validate_${name}"->($ctxt, $params->{$name});
+            };
+            $error = $@;
+            $ctxt->{_Failed}++ if $error;
+            $error =~ s/ at .*? line \d+\.$//;
+        }
+    }
+    
+    # load
+    if (defined &{"${package}::load_${name}"}) {
+        $params->{$name} = "${package}::load_${name}"->($ctxt, $default, $params->{$name});
+    }
+    elsif (!$params->{'__submitting'}) {
+        $params->{$name} = $default;
+    }
+    
+    if ($wrap) {
+        if ($wrap eq 'no') {
+            undef $wrap;
+        }
+        if ($wrap ne 'yes' && $wrap ne 'y') {
+            undef $wrap;
+        }
+    }
+    
+    return {
+        textarea => { 
+            cols => $cols,
+            rows => $rows,
+            ($wrap ? (wrap => 'wrap') : ()),
+            name => $name,
+            value => $params->{$name},
+            ($error ? (error => $error) : ()),
+            }
+        };
 }
 
 1;
@@ -572,27 +635,611 @@ __END__
 
 =head1 NAME
 
-AxKit::XSP::PerForm - Perl extension for blah blah blah
+AxKit::XSP::PerForm - XSP Taglib for making complex forms easy
 
 =head1 SYNOPSIS
 
-  use AxKit::XSP::PerForm;
-  blah blah blah
+  AxAddXSPTaglib AxKit::XSP::PerForm
 
 =head1 DESCRIPTION
 
-Stub documentation for AxKit::XSP::PerForm was created by h2xs. It looks like the
-author of the extension was negligent enough to leave the stub
-unedited.
+PerForm is a large and complex taglib for AxKit XSP that facilitates creating
+large and complex HTML, WML, or other types of data-entry forms. PerForm tends to
+make life easier for you if your form data is coming from different data sources,
+such as DBI, or even XML.
 
-Blah blah blah.
+PerForm works as an XSP taglib, meaning you simply add some custom XML tags to
+your XSP page, and PerForm does the rest. Well, almost... PerForm works mainly
+by callbacks, as you will see below.
+
+=head1 EXAMPLE FORM
+
+Ignoring the outside XSP and namespace declarations, assuming the prefix "f" is
+bound to the PerForm namespace:
+
+  <f:form name="add_user">
+   First name: <f:textfield name="firstname" width="30" maxlength="50"/>
+   <br />
+   Last name: <f:textfield name="lastname" width="30" maxlength="50"/>
+   <br />
+   <f:submit name="save" value="Save" goto="users.xsp" />
+   <f:cancel name="cancel" value="Cancel" goto="home.html" />
+  </f:form>
+
+Now it is important to bear in mind that this is just the form, and alone it is
+fairly useless. You also need to add callbacks. You'll notice with each of these
+callbacks you recieve a C<$ctxt> object. This is simply an empty hash-ref that
+you can use in the callbacks to maintain state. Actually "empty" is an
+exhageration - it contains two entries always: C<Form> and C<Apache>. "Form" is
+a simply a hashref of the entries in the form. So for example, the firstname
+below is in C<$ctxt->{Form}{firstname}>. "Apache" is the C<$r> apache request
+object for the current request.
+
+  sub validate_firstname {
+      my ($ctxt, $value) = @_;
+      $value =~ s/^\s*/;
+      $value =~ s/\s*$/;
+      die "No value" unless $value;
+      die "Invalid firstname - non word character not allowed"
+                if $value =~ /\W/;
+  }
+  
+  sub validate_lastname {
+      return validate_firstname(@_);
+  }
+  
+  sub submit_save {
+      my ($ctxt) = @_;
+      # save values to a database
+      warn("User: ", $ctxt->{Form}{firstname}, " ", $ctxt->{Form}{lastname}, "\n");
+  }
+
+Now these methods need to be global to your XSP page, rather than "closures" within 
+the XSP page's main handler routine. How do you do that? Well it's simple. Just put
+them within a <xsp:logic> section before any user defined tags. For example, if your
+XSP page happens to use XHTML as it's basic format (something I do a lot), your page
+might be constructed as follows (namespace declarations omitted for brevity):
+
+  <xsp:page>
+    <xsp:logic>
+    ... form logic here ...
+    </xsp:logic>
+    
+    <html>
+    <head><title>An Example Form</title></head>
+    <body>
+     <h1>An Example Form</h1>
+     <f:form>
+      ... form definition here ...
+     </f:form>
+    </body>
+    </html>
+  </xsp:page>
+
+[Note that the page-global methods is a useful technique in other situations, because
+unlike Apache::Registry scripts, this won't create a closure from methods defined there].
+
+=head1 SUBMISSION PROCEDURE
+
+In PerForm, all forms submit back to themselves. This allows us to implement the callback
+system. Of course with most forms, you want to go somewhere else once you've processed
+the form. So for this, we issue redirects once the form has been processed. This has the
+advantage that you can't hit reload by accident and have the form re-submitted.
+
+To define where you go on hitting submit, you can either return set the I<goto> attribute
+on the submit or cancel button, or implement a callback and return a URI to redirect to.
+
+=head1 THE CONTEXT OBJECT
+
+Each of the form callbacks is passed a context object. This is a hashref you are allowed
+to use to maintain state between your callbacks. There is a new context object created
+for every form on your XSP page. There are two entries filled in automatically into
+the hashref for you:
+
+=over 4
+
+=item Form
+
+This is actually an Apache::Table object, so it looks and works just like an ordinary
+hashref, and contains the values submitted from the form, or is perhaps empty if the
+form hasn't been submitted yet. It may also contain any parameters passed in the
+querystring. For multi-value parameters, they can be accessed via Apache::Table's
+get, add and set methods. See L<Apache::Table>.
+
+=item Apache
+
+The Apache entry is the apache request object for the current request. You can use
+this, for example, to get the current URI, or to get something out of dir_config,
+or perhaps to send a header. See L<Apache>.
+
+=back
+
+To add an entry to the context object, simply use it as a hashref:
+
+  $ctxt->{my_key} = $my_value;
+
+And you can later get at that in another callback via C<$ctxt->{my_key}>.
+
+=head1 TAG DOCUMENTATION
+
+The following documentation uses the prefix I<f:> for all PerForm tags. This assumes you
+have a namespace declaration C<xmlns:f="http://axkit.org/NS/xsp/perform/v1"> in your
+XSP file.
+
+Please note that for all of the widget tags, PerForm uses TaglibHelper. This has the
+advantage that you can define attributes either as XML attributes in the tag, or
+as child tags in the PerForm namespace. So:
+
+  <f:textfield name="foo" default="bar"/>
+
+Is exactly equivalent to:
+
+  <f:textfield name="foo">
+    <f:default>bar</f:default>
+  </f:textfield>
+
+The advantage of this is that child tags can get their content from other XSP tags.
+
+=head2 <f:form>
+
+This tag has to be around the main form components. It does not have to have any ACTION
+or METHOD attributes, as that is all sorted out internally. Note that you can have as
+many f:form tags on a page as you want, but it probably doesn't make sense to nest them.
+
+B<Attributes:>
+
+=over 4
+
+=item name
+
+The name of the form. This name is used to call start_form_<name>, and end_form_<name>.
+
+=back
+
+B<Callbacks:>
+
+=over 4
+
+=item start_form_<name>
+
+Passed a single parameter: C<$ctxt>, the context object. This callback is called before
+processing the form contents.
+
+=item end_form_<name>
+
+Passed a single parameter: C<$ctxt>, the context object. This callback is called after
+processing the form contents, but before processing any submit or cancel buttons.
+
+=back
+
+Note that <f:form> is the B<only> tag in PerForm that has content. All other tags are empty,
+unless you define the attributes in child tags, as documented above.
+
+=head2 <f:submit/>
+
+A submit button. Every form should have one, otherwise there is little point in having a form!
+
+B<Attributes:>
+
+=over 4
+
+=item name (mandatory)
+
+The name of the submit button. Used for the submit callbacks.
+
+=item value
+
+The text on the button, if you are using a browser generated button.
+
+=item image
+
+A URI to the image, if you instead wish to use an image for the button.
+
+=item alt
+
+Alternate text for an image button.
+
+=item border
+
+The width of the border around an image button. Default is zero.
+
+=item align
+
+The alignment of the button
+
+=item goto
+
+If you do not wish to implement the callback below, you can set the goto
+attribute to a URI to redirect to when the user hits the button. Normally
+you won't use this unless you happen to not want to save the form values
+in any way.
+
+=back
+
+B<Callbacks:>
+
+=over 4
+
+=item submit_<name> ( $ctxt )
+
+This callback is used to "do something" with the submitted form values. You
+might write them to a database or a file, or change something in your application.
+
+The return value from submit_<name> is used to redirect the user to the "next"
+page, whatever that might be.
+
+=back
+
+=head2 <f:cancel/>
+
+A cancel button. This is similar to the submit button, but instead of being used
+to save the form values (or "do something" with them), should be used to cancel
+the use of this particular form and go somewhere else. The most common use of this
+is to simply set the I<goto> attribute to redirect to another page.
+
+B<Attributes:>
+
+All attributes are the same as for <f:submit/>.
+
+B<Callbacks:>
+
+=over 4
+
+=item cancel_<name> ( $ctxt )
+
+Implement this method to override the goto attribute. Return the URI you want to redirect
+to. This can be used to dynamically generate the URI to redirect to.
+
+=back
+
+=head2 <f:textfield/>
+
+A text entry field.
+
+B<Attributes:>
+
+=over 4
+
+=item name (mandatory)
+
+The name of the textfield. Should be unique to the entire XSP page, as callbacks only use
+the widget name. Can also be used in C<$ctxt-E<gt>{Form}{E<lt>nameE<gt>}> to retrieve the
+value.
+
+=item default
+
+A default value for the textfield.
+
+=item width
+
+The width of the textfield on the screen. Units are dependant on the final rendering
+method - for HTML this would be em characters.
+
+=item maxlength
+
+The maximum number of characters you can enter into this text field.
+
+=back
+
+B<Callbacks:>
+
+=over 4
+
+=item load_<name> ( $ctxt, $default, $current )
+
+Used to load a value into the edit box. The default is from the attributes above. The
+current value is only set if this form has been submitted once already, and contains
+the value submitted.
+
+Simply return the value you want to appear in the textfield.
+
+If you do not implement this method, the value in the textfield defaults to
+C<$current || $default>.
+
+=item validate_<name> ( $ctxt, $value )
+
+Implement this method to validate the contents of the textfield. If the value is valid,
+you don't need to do anything. However if it invalid, throw an exception with the reason
+why it is invalid. Example:
+
+  sub validate_username {
+      my ($ctxt, $value) = @_;
+      # strip leading/trailing whitespace
+      $value =~ s/^\s*//;
+      $value =~ s/\s*$//;
+      die "No value" unless length $value;
+      die "Invalid characters" if $value =~ /\W/;
+  }
+
+=back
+
+=head2 <f:password/>
+
+A password entry field. This works B<exactly> the same way as a textfield, so we don't
+duplicate the documentation here
+
+=head2 <f:checkbox/>
+
+A checkbox.
+
+B<Attributes:>
+
+=over 4
+
+=item name (mandatory)
+
+The name of the checkbox, used to name the callback methods.
+
+=item value
+
+The value that gets sent to the server when this checkbox is checked.
+
+=item checked
+
+Set to 1 or yes to have this checkbox checked by default. Set to 0, no, or leave
+off altogether to have it unchecked.
+
+=item label
+
+Used in HTML 4.0, the label for the checkbox. Use this with care as most browsers
+don't support it.
+
+=back
+
+B<Callbacks:>
+
+=over 4
+
+=item load_<name> ( $ctxt, $current )
+
+If you implement this method, you can change the default checked state of the
+checkbox, and the value returned by the checkbox if you need to.
+
+Return one or two values. The first value is whether the box is checked or not,
+and the second optional value is what value is sent to the server when the checkbox
+is checked and submitted.
+
+=item validate_<name> ( $ctxt, $value )
+
+Validate the value in the checkbox. Throw an exception to indicate validation failure.
+
+=back
+
+=head2 <f:file-upload/>
+
+A file upload field (normally in HTML, a text entry box, and a "Browse..." button).
+
+B<Attributes:>
+
+=over 4
+
+=item name (mandatory)
+
+The name of the file upload field.
+
+=item value
+
+A default filename to put in the box. Use with care because putting something in here
+is not very user friendly!
+
+=item accept
+
+A list of MIME types to accept in this dialog box. Some browsers might use this in the
+Browse dialog to restrict the list of files to show.
+
+=back
+
+B<Callbacks:>
+
+=over 4
+
+=item load_<name> ( $ctxt, $default, $current )
+
+Load a new value into the file upload field. Return the value to go in the field.
+
+=item validate_<name> ( $ctxt, $filename, $fh, $size, $type, $info )
+
+Validate the uploaded file. This is also actually the place where you would save the
+file to disk somewhere, by reading from $fh and writing to somewhere else, or using
+File::Copy to do that for you. It is much harder to access the file from the submit
+callback.
+
+If the file is somehow invalid, throw an exception with the text of why it is invalid.
+
+=back
+
+=head2 <f:hidden/>
+
+A hidden form field, for storing persistent information across submits.
+
+PerForm hidden fields are quite useful because they are self validating against
+modification between submits, so if a malicious user tries to change the value by
+editing the querystring or changing the form value somehow, the execution of your
+script will die with an exception.
+
+B<Attributes:>
+
+=over 4
+
+=item name (mandatory)
+
+The name of the hidden field
+
+=item value
+
+The value stored in the hidden field
+
+=back
+
+B<Callbacks:>
+
+=over 4
+
+=item load_<name> ( $ctxt, $default )
+
+If you wish the value to be dynamic somehow, implement this callback and return a
+new value for the hidden field.
+
+=back
+
+There is no validate callback for hidden fields.
+
+=head2 <f:textarea/>
+
+A large box of editable text.
+
+B<Attributes:>
+
+=over 4
+
+=item name (mandatory)
+
+A name for the textarea
+
+=item cols
+
+The number of columns (width) of the box.
+
+=item rows
+
+The number of rows of text to display.
+
+=item wrap
+
+Set this to "yes" or "1" to have the textarea wrap the text automatically. Set to
+"no" or leave blank to not wrap. Default is to not wrap.
+
+=item default
+
+The default text to put in the textarea.
+
+=back
+
+B<Callbacks:>
+
+=over 4
+
+=item load_<name> ( $ctxt, $default, $current )
+
+Load a new value into the widget. Return the string you want to appear in the box.
+
+=item validate_<name> ( $ctxt, $value )
+
+Validate the contents of the textarea. If the contents are somehow invalid, throw
+an exception in your code with the string of the error. One use for this might be
+validating a forums posting edit box against a small DTD of HTML-like elements. You can
+use XML::LibXML to do this, like this:
+
+  sub validate_body {
+    my ($ctxt, $value) = @_;
+    $value =~ s/\A\s*//;
+    $value =~ s/\s*\Z//;
+    die "No content" unless length($value);
+    my $dtdstr = <<EOT;
+  <!ELEMENT root (#PCDATA|p|b|i|a)*>
+  <!ELEMENT p (#PCDATA|b|i|a)*>
+  <!ELEMENT b (#PCDATA|i|a)*>
+  <!ELEMENT i (#PCDATA|b|a)*>
+  <!ELEMENT a (#PCDATA|b|i)*>
+  <!ATTLIST a
+        href CDATA #REQUIRED
+        >
+  EOT
+    my $dtd = XML::LibXML::Dtd->parse_string($dtdstr);
+    my $xml = XML::LibXML->new->parse_string(
+                "<root>$value</root>"
+                );
+    eval {
+        $xml->validate($dtd);
+    };
+    if ($@) {
+        die "Invalid markup in body text: $@";
+    }
+    
+  }
+
+=back
+
+=head2 <f:single-select/>
+
+A drop-down select list of items.
+
+Both single-select and multi-select (below) are populated solely by callbacks.
+
+B<Attributes:>
+
+=over 4
+
+=item name (mandatory)
+
+The name of the single select widget.
+
+=back
+
+B<Callbacks:>
+
+=over 4
+
+=item load_<name> ( $ctxt, $currently_selected )
+
+The return values for this callback both populate the list, and define which value
+is selected.
+
+The return set is a simple list: selected, text, value, text, value, ...
+
+Where selected matches a B<value> from that list. So, for example, it might be:
+
+  sub load_list {
+      my ($ctxt, $current) = @_;
+      return $current || "#FF0000", 
+        "Blue" => "#0000FF", 
+        "Red" => "#FF0000",
+        "Green" => "#00FF00",
+        ;
+  }
+
+=item validate_<name> ( $ctxt, $value )
+
+Validate the value. Throw an exception with the text of the error if something is wrong.
+
+=back
+
+=head2 <f:multi-select/>
+
+A multiple select box, with a scrollable list of values.
+
+B<Attributes:>
+
+=over 4
+
+=item name (mandatory)
+
+The name of the multiple select widget.
+
+=back
+
+B<Callbacks:>
+
+=over 4
+
+=item load_<name> ( $ctxt, $currently_selected )
+
+This works very similarly to the load callback for single selects (above), except that
+both the $currently_selected, and the returned selected value are array refs.
+
+=item validate_<name> ( $ctxt, $values )
+
+Here $values is an array ref of the selected values. As usual, if one is in error somehow,
+throw an exception containing the text of the error.
+
+=back
 
 =head1 AUTHOR
 
-A. U. Thor, a.u.thor@a.galaxy.far.far.away
+Matt Sergeant, matt@sergeant.org
 
 =head1 SEE ALSO
 
-perl(1).
+L<AxKit>, L<Apache::AxKit::Language::XSP>
 
 =cut

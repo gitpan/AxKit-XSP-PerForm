@@ -71,4 +71,12 @@
     <xsl:apply-templates select="error"/>
 </xsl:template>
 
+<xsl:template match="textarea">
+    <textarea name="{@name|name}" cols="{@cols|cols}" rows="{@rows|rows}">
+    <xsl:if test="@wrap|wrap"><xsl:attribute name="wrap">physical</xsl:attribute></xsl:if>
+    <xsl:value-of select="@value|value"/>
+    </textarea> <br />
+    <xsl:apply-templates select="error"/>
+</xsl:template>
+
 </xsl:stylesheet>

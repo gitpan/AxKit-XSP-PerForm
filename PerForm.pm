@@ -1,8 +1,8 @@
-# $Id: PerForm.pm,v 1.23 2003/06/24 10:17:29 matt Exp $
+# $Id: PerForm.pm,v 1.24 2003/08/10 16:43:56 matt Exp $
 
 package AxKit::XSP::PerForm;
 
-$VERSION = "1.82";
+$VERSION = "1.83";
 
 use AxKit 1.4;
 use Apache;
@@ -134,7 +134,7 @@ if (\$cgi->param('__submitting_$name')) {
                 \$redirect = \$sub->(\$_form_ctxt, \$_cancel_index{\$cancel}{'index'});
             }
             if (\$redirect) {
-                AxKit::XSP::WebUtils::redirect(\$redirect,undef,undef,1);
+                return AxKit::XSP::WebUtils::redirect(\$redirect,undef,undef,1);
             }
         }
     }
@@ -150,12 +150,23 @@ if (\$cgi->param('__submitting_$name') && !\$_form_ctxt->{_Failed}) {
                 \$redirect = \$sub->(\$_form_ctxt, \$_submit_index{\$submit}{'index'});
             }
             if (\$redirect) {
-                AxKit::XSP::WebUtils::redirect(\$redirect,undef,undef,1);
+                return AxKit::XSP::WebUtils::redirect(\$redirect,undef,undef,1);
             }
         }
     }
 }
 
+# catch the case where IE submitted the form without any buttons used
+if (\$cgi->param('__submitting_$name') && !\$_form_ctxt->{_Failed}) {
+    no strict 'refs';
+    my \$redirect;
+    if (my \$sub = \$package->can('$onsubmit')) {
+        \$redirect = \$sub->(\$_form_ctxt);
+    }
+    if (\$redirect) {
+        return AxKit::XSP::WebUtils::redirect(\$redirect, undef, undef, 1);
+    }
+}
 
 }
 EOT
@@ -910,6 +921,11 @@ specify perl function names to validate and load respectively. Submit
 buttons support C<onsubmit> attributes. Cancel buttons support C<oncancel>
 attributes. Forms themselves support both C<oncancel> and C<onsubmit>
 attributes.
+
+If a form is submitted without pressing a button (such as via JavaScript,
+or by hitting <Enter>, then the form tag's C<onsubmit> callback will be
+used. It is always sensible to define this to be one of your button's
+submit callbacks.
 
 All tags allow a C<disabled> attribute. Set this to a true value (i.e.
 C<disabled="1">) to set the control to disabled. This will be interpreted

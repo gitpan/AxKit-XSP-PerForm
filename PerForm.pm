@@ -1,8 +1,8 @@
-# $Id: PerForm.pm,v 1.13 2002/12/23 14:05:42 matt Exp $
+# $Id: PerForm.pm,v 1.20 2003/06/16 08:16:25 matt Exp $
 
 package AxKit::XSP::PerForm;
 
-$VERSION = "1.7";
+$VERSION = "1.8";
 
 use AxKit 1.4;
 use Apache;
@@ -14,16 +14,16 @@ $NS = 'http://axkit.org/NS/xsp/perform/v1';
 @ISA = qw(Apache::AxKit::Language::XSP);
 
 @EXPORT_TAGLIB = (
-    'textfield($name;$default,$width,$maxlength,$index)',
-    'password($name;$default,$width,$maxlength,$index)',
-    'submit($name;$value,$image,$alt,$border,$align,$goto,$index)',
-    'cancel($name;$value,$image,$alt,$border,$align,$goto,$index)',
-    'checkbox($name;$value,$checked,$label,$index)',
-    'file_upload($name;$value,$accept)',
-    'hidden($name;$value,$index)',
-    'textarea($name;$cols,$rows,$wrap,$default,$index)',
-    'single_select($name;$default,$index,*options):itemtag=option',
-    'multi_select($name;@default,$index,*option):itemtag=option',
+    'textfield($name;$default,$width,$maxlength,$index,$onvalidate,$onload)',
+    'password($name;$default,$width,$maxlength,$index,$onvalidate,$onload)',
+    'submit($name;$value,$image,$alt,$border,$align,$goto,$index,$onsubmit)',
+    'cancel($name;$value,$image,$alt,$border,$align,$goto,$index,$oncancel)',
+    'checkbox($name;$value,$checked,$label,$index,$onvalidate,$onload)',
+    'file_upload($name;$value,$accept,$onvalidate,$onload)',
+    'hidden($name;$value,$index,$onload)',
+    'textarea($name;$cols,$rows,$wrap,$default,$index,$onvalidate,$onload)',
+    'single_select($name;$default,$index,$onvalidate,$onload,*options):itemtag=option',
+    'multi_select($name;@default,$index,$onvalidate,$onload,*option):itemtag=option',
 );
 
 use strict;
@@ -59,7 +59,7 @@ sub parse_start {
             Name => "hidden",
             NamespaceURI => "",
             Attributes => [
-                { Name => "name", Value => "__submitting" },
+                { Name => "name", Value => "__submitting_$attribs{name}" },
                 { Name => "value", Value => "1" },
             ],
         };
@@ -69,14 +69,14 @@ sub parse_start {
         return <<EOT
 {        
 use vars qw(\$_form_ctxt \@_submit_buttons \%_submit_goto \%_submit_index \@_cancel_buttons \%_cancel_goto \%_cancel_index );
-local \$_form_ctxt = { Form => \$cgi->parms, Apache => \$r };
+local \$_form_ctxt = { Form => \$cgi->parms, Apache => \$r, Name => '$attribs{name}' };
 local \@_submit_buttons;
 local \@_cancel_buttons;
 local \%_submit_goto;
 local \%_cancel_goto;
 local \%_submit_index;
 local \%_cancel_index;
-start_form_$attribs{name}(\$_form_ctxt, \$cgi->param('__submitting'))
+start_form_$attribs{name}(\$_form_ctxt, \$cgi->param('__submitting_$attribs{name}'))
           if defined \&start_form_$attribs{name};
 EOT
     }
@@ -96,45 +96,61 @@ sub end_element {
         };
         
         my $name;
+        my $onsubmit;
+        my $oncancel;
+        my $onformend;
         
         for my $attr (@{$element->{Attributes}}) {
             if ($attr->{Name} eq 'name') {
                 $name = $attr->{Value};
             }
+            elsif ($attr->{Name} eq 'onformend') {
+                $onformend = $attr->{Value};
+            }
+            elsif ($attr->{Name} eq 'onsubmit') {
+                $onsubmit = $attr->{Value};
+            }
+            elsif ($attr->{Name} eq 'oncancel') {
+                $oncancel = $attr->{Value};
+            }
         }
         
         $e->end_element($form_el);
         return <<EOT;
-end_form_${name}(\$_form_ctxt, \$cgi->param('__submitting'))
-        if defined \&end_form_${name};
+my \$package = __PACKAGE__;
+if (my \$sub = \$package->can('$onformend' || 'end_form_$name')) {
+    \$sub->(\$_form_ctxt, \$cgi->param('__submitting_$name'));
+}
 
-#warn("submitting? ".(\$cgi->param('__submitting')?"yes":"no").", failed? ".(\$_form_ctxt->{_Failed}?"yes":"no"));
+# warn("submitting? ".(\$cgi->param('__submitting_$name')?"yes":"no").", failed? ".(\$_form_ctxt->{_Failed}?"yes":"no"));
 
-if (\$cgi->param('__submitting')) {
+if (\$cgi->param('__submitting_$name')) {
     foreach my \$cancel (\@_cancel_buttons) {
         if (\$cgi->param(\$cancel)) {
             no strict 'refs';
             my \$redirect;
             \$redirect = \$_cancel_goto{\$cancel};
-            \$redirect = "cancel_\$_cancel_index{\$cancel}{'name'}"->(\$_form_ctxt, \$_cancel_index{\$cancel}{'index'})
-                    if defined \&{"cancel_\$_cancel_index{\$cancel}{'name'}"};
+            if (my \$sub = \$package->can(\$_cancel_index{\$cancel}{oncancel} || '$oncancel' || "cancel_\$_cancel_index{\$cancel}{name}")) {
+                \$redirect = \$sub->(\$_form_ctxt, \$_cancel_index{\$cancel}{'index'});
+            }
             if (\$redirect) {
-                AxKit::XSP::WebUtils::redirect(\$redirect);
+                AxKit::XSP::WebUtils::redirect(\$redirect,undef,undef,1);
             }
         }
     }
 }
 
-if (\$cgi->param('__submitting') && !\$_form_ctxt->{_Failed}) {
+if (\$cgi->param('__submitting_$name') && !\$_form_ctxt->{_Failed}) {
      foreach my \$submit (\@_submit_buttons) {
         if (\$cgi->param(\$submit)) {
             no strict 'refs';
             my \$redirect;
             \$redirect = \$_submit_goto{\$submit};
-            \$redirect = "submit_\$_submit_index{\$submit}{'name'}"->(\$_form_ctxt, \$_submit_index{\$submit}{'index'}) 
-                    if defined \&{"submit_\$_submit_index{\$submit}{'name'}"};
+            if (my \$sub = \$package->can(\$_submit_index{\$submit}{onsubmit} || '$onsubmit' || "submit_\$_submit_index{\$submit}{name}")) {
+                \$redirect = \$sub->(\$_form_ctxt, \$_submit_index{\$submit}{'index'});
+            }
             if (\$redirect) {
-                AxKit::XSP::WebUtils::redirect(\$redirect);
+                AxKit::XSP::WebUtils::redirect(\$redirect,undef,undef,1);
             }
         }
     }
@@ -149,8 +165,8 @@ EOT
     }
 }
 
-sub textfield ($;$$$$) {
-    my ($name, $default, $width, $maxlength, $index) = @_;
+sub textfield ($;$$$$$$) {
+    my ($name, $default, $width, $maxlength, $index, $onval, $onload) = @_;
     my ($package) = caller;
     
     no strict 'refs';
@@ -158,14 +174,17 @@ sub textfield ($;$$$$) {
     my $ctxt = ${"${package}::_form_ctxt"};
     
     my $params = $ctxt->{Form};
+    my $fname = $ctxt->{Name};
     
     my $error;
     
     # validate
-    if ($params->{'__submitting'}) {
-        if (defined &{"${package}::validate_${name}"}) {
+    if ($params->{"__submitting_$fname"}) {
+        # warn("Checking if $package can " . ($onval || "validate_${name}") . "\n");
+        if (my $sub = $package->can($onval || "validate_${name}")) {
             eval {
-                "${package}::validate_${name}"->($ctxt, $params->{$name.$index}, $index);
+                $sub->($ctxt, ($params->get($name.$index))[-1], $index);
+                $params->{$name.$index} = ($params->get($name.$index))[-1];
             };
             $error = $@;
             $ctxt->{_Failed}++ if $error;
@@ -173,8 +192,8 @@ sub textfield ($;$$$$) {
         }
     }
     # load
-    elsif (defined &{"${package}::load_${name}"}) {
-        $params->{$name.$index} = "${package}::load_${name}"->($ctxt, $default, $params->{$name.$index}, $index);
+    elsif (my $sub = $package->can($onload || "load_${name}")) {
+        $params->{$name.$index} = $sub->($ctxt, $default, ($params->get($name.$index))[-1], $index);
     }
     else{ 
         $params->{$name.$index} = $default;
@@ -185,15 +204,15 @@ sub textfield ($;$$$$) {
             width => $width,
             maxlength => $maxlength,
             name => $name,
-            value => $params->{$name.$index},
+            value => ($params->get($name.$index))[-1],
 	    index => $index,
             ($error ? (error => $error) : ()),
             }
         };
 }
 
-sub submit ($;$$$$$$$) {
-    my ($name, $value, $image, $alt, $border, $align, $goto, $index) = @_;
+sub submit ($;$$$$$$$$) {
+    my ($name, $value, $image, $alt, $border, $align, $goto, $index, $onsubmit) = @_;
     my ($package) = caller;
     
     no strict 'refs';
@@ -205,6 +224,7 @@ sub submit ($;$$$$$$$) {
     ${"${package}::_submit_goto"}{$name.$index} = $goto if $goto;
     ${"${package}::_submit_index"}{$name.$index}{'index'} = $index;
     ${"${package}::_submit_index"}{$name.$index}{'name'} = $name;
+    ${"${package}::_submit_index"}{$name.$index}{'onsubmit'} = $onsubmit;
     
     # save
     if ($image) {
@@ -231,8 +251,8 @@ sub submit ($;$$$$$$$) {
     }
 }
 
-sub cancel ($;$$$$$$$) {
-    my ($name, $value, $image, $alt, $border, $align, $goto, $index) = @_;
+sub cancel ($;$$$$$$$$) {
+    my ($name, $value, $image, $alt, $border, $align, $goto, $index, $oncancel) = @_;
     my ($package) = caller;
     
     no strict 'refs';
@@ -244,6 +264,7 @@ sub cancel ($;$$$$$$$) {
     ${"${package}::_cancel_goto"}{$name.$index} = $goto if $goto;
     ${"${package}::_cancel_index"}{$name.$index}{'index'} = $index;
     ${"${package}::_cancel_index"}{$name.$index}{'name'} = $name;
+    ${"${package}::_cancel_index"}{$name.$index}{'oncancel'} = $oncancel;
     
     # save
     if ($image) {
@@ -283,8 +304,8 @@ sub button ($;$$) {
     # TODO: What do we want buttons to do?
 }
 
-sub checkbox ($;$$$$) {
-    my ($name, $value, $checked, $label, $index) = @_;
+sub checkbox ($;$$$$$$) {
+    my ($name, $value, $checked, $label, $index, $onval, $onload) = @_;
     my ($package) = caller;
     $value = 1 unless $value;
     
@@ -293,14 +314,16 @@ sub checkbox ($;$$$$) {
     my $ctxt = ${"${package}::_form_ctxt"};
     
     my $params = $ctxt->{Form};
+    my $fname = $ctxt->{Name};
     
     my $error;
     
     # validate
-    if ($params->{'__submitting'}) {
-        if (defined &{"${package}::validate_${name}"}) {
+    if ($params->{"__submitting_$fname"}) {
+        if (my $sub = $package->can($onval || "validate_${name}")) {
             eval {
-                "${package}::validate_${name}"->($ctxt, $params->{$name.$index}, $index);
+                $sub->($ctxt, ($params->get($name.$index))[-1], $index);
+                $params->{$name.$index} = ($params->get($name.$index))[-1];
             };
             $error = $@;
             $ctxt->{_Failed}++ if $error;
@@ -308,13 +331,13 @@ sub checkbox ($;$$$$) {
         }
     }
     # load
-    elsif (defined &{"${package}::load_${name}"}) {
-        my @vals = "${package}::load_${name}"->($ctxt, $params->{$name.$index}, $index);
+    elsif (my $sub = $package->can($onload || "load_${name}")) {
+        my @vals = $sub->($ctxt, $value, ($params->get($name.$index))[-1], $index);
         $checked = shift @vals;
         $value = shift @vals if @vals;
     }
     else {
-        $checked = 1 if defined($params->{$name.$index});
+        $checked = 1 if defined(($params->get($name.$index))[-1]);
     }
     
     if ($checked && $checked eq 'yes') {
@@ -336,8 +359,8 @@ sub checkbox ($;$$$$) {
     };
 }
 
-sub file_upload ($;$$) {
-    my ($name, $value, $accept) = @_;
+sub file_upload ($;$$$$) {
+    my ($name, $value, $accept, $onval, $onload) = @_;
     my ($package) = caller;
     
     no strict 'refs';
@@ -345,12 +368,13 @@ sub file_upload ($;$$) {
     my $ctxt = ${"${package}::_form_ctxt"};
     
     my $params = $ctxt->{Form};
+    my $fname = $ctxt->{Name};
     
     my $error;
     
     # validate
-    if ($params->{'__submitting'}) {
-        if (defined &{"${package}::validate_${name}"}) {
+    if ($params->{"__submitting_$fname"}) {
+        if (my $sub = $package->can($onval || "validate_${name}")) {
             my $upload = Apache::Request->instance(Apache->request)->upload($name);
             
             my $filename;
@@ -361,7 +385,7 @@ sub file_upload ($;$$) {
             }
     
             eval {
-               "${package}::validate_${name}"->($ctxt, 
+               $sub->($ctxt, 
                        ($upload ? 
                             (   $filename,
                                 $upload->fh, 
@@ -379,8 +403,8 @@ sub file_upload ($;$$) {
         }
     }
     # load
-    elsif (defined &{"${package}::load_${name}"}) {
-        $params->{$name} = "${package}::load_${name}"->($ctxt, $value, $params->{$name});
+    elsif (my $sub = $package->can($onload || "load_${name}")) {
+        $params->{$name} = $sub->($ctxt, $value, $params->{$name});
     }
     else {
         $params->{$name} = $value;
@@ -396,20 +420,22 @@ sub file_upload ($;$$) {
     };
 }
 
-sub hidden ($;$$) {
-    my ($name, $value, $index) = @_;
+sub hidden ($;$$$) {
+    my ($name, $value, $index, $onload) = @_;
     my ($package) = caller;
     
     no strict 'refs';
     
     my $ctxt = ${"${package}::_form_ctxt"};
     my $params = $ctxt->{Form};
+    my $fname = $ctxt->{Name};
 
-    if (!defined($value) && defined &{"${package}::load_${name}"}) {
+    if (!defined($value) && $package->can($onload || "load_${name}")) {
 	# load value if not defined
-	$value = "${package}::load_${name}"->($ctxt, $value, $index);
+        my $sub = $package->can($onload || "load_${name}");
+	$value = $sub->($ctxt, $value, $index);
     }
-    if ($params->{'__submitting'} && ($value ne $params->{$name.$index})) {
+    if ($params->{"__submitting_$fname"} && ($value ne ($params->get($name.$index))[-1])) {
 	die "Someone tried to change your hidden form value!";
     }
 
@@ -422,8 +448,8 @@ sub hidden ($;$$) {
     };
 }
 
-sub multi_select ($;$$$) {
-    my ($name, $default, $index, $option) = @_;
+sub multi_select ($;$$$$$) {
+    my ($name, $default, $index, $onval, $onload, $option) = @_;
     my ($package) = caller;
     
     no strict 'refs';
@@ -431,15 +457,16 @@ sub multi_select ($;$$$) {
     my $ctxt = ${"${package}::_form_ctxt"};
     
     my $params = $ctxt->{Form};
+    my $fname = $ctxt->{Name};
     
     my $error;
     my ($selected, @options);
     
     # validate
-    if ($params->{'__submitting'}) {
-        if (defined &{"${package}::validate_${name}"}) {
+    if ($params->{"__submitting_$fname"}) {
+        if (my $sub = $package->can($onval || "validate_${name}")) {
             eval {
-                "${package}::validate_${name}"->($ctxt, [$params->get($name.$index)], $index);
+                $sub->($ctxt, [$params->get($name.$index)], $index);
             };
             $error = $@;
             $ctxt->{_Failed}++ if $error;
@@ -447,10 +474,10 @@ sub multi_select ($;$$$) {
         }
     }
     # load
-    elsif (defined &{"${package}::load_${name}"}) {
-        ($selected, @options) = "${package}::load_${name}"->($ctxt, [$params->get($name.$index)], $default, $index);
+    elsif (my $sub = $package->can($onload || "load_${name}")) {
+        ($selected, @options) = $sub->($ctxt, [$params->get($name.$index)], $default, $index);
     }
-    elsif (!$params->{'__submitting'}) {
+    elsif (!$params->{"__submitting_$fname"}) {
         $selected = [@{$default}];
         @options = map { $$_{name}, $$_{value} } @{$option};
     }
@@ -482,8 +509,8 @@ sub multi_select ($;$$$) {
     };
 }
 
-sub password ($;$$$$) {
-    my ($name, $default, $width, $maxlength, $index) = @_;
+sub password ($;$$$$$$) {
+    my ($name, $default, $width, $maxlength, $index, $onval, $onload) = @_;
     my ($package) = caller;
     
     no strict 'refs';
@@ -491,14 +518,16 @@ sub password ($;$$$$) {
     my $ctxt = ${"${package}::_form_ctxt"};
     
     my $params = $ctxt->{Form};
+    my $fname = $ctxt->{Name};
     
     my $error;
     
     # validate
-    if ($params->{'__submitting'}) {
-        if (defined &{"${package}::validate_${name}"}) {
+    if ($params->{"__submitting_$fname"}) {
+        if (my $sub = $package->can($onval || "validate_${name}")) {
             eval {
-                "${package}::validate_${name}"->($ctxt, $params->{$name,$index}, $index);
+                $sub->($ctxt, ($params->get($name.$index))[-1], $index);
+                $params->{$name.$index} = ($params->get($name.$index))[-1];
             };
             $error = $@;
             $ctxt->{_Failed}++ if $error;
@@ -506,8 +535,8 @@ sub password ($;$$$$) {
         }
     }
     # load
-    elsif (defined &{"${package}::load_${name}"}) {
-        $params->{$name.$index} = "${package}::load_${name}"->($ctxt, $default, $params->{$name,$index}, $index);
+    elsif (my $sub = $package->can($onload || "load_${name}")) {
+        $params->{$name.$index} = $sub->($ctxt, $default, ($params->get($name.$index))[-1], $index);
     }
     else {
         $params->{$name.$index} = $default;
@@ -518,7 +547,7 @@ sub password ($;$$$$) {
             width => $width,
             maxlength => $maxlength,
             name => $name,
-            value => $params->{$name},
+            value => ($params->get($name.$index))[-1],
             ($error ? (error => $error) : ()),
 	    index => $index,
             }
@@ -540,8 +569,8 @@ sub reset ($;$) {
     };
 }
 
-sub single_select ($$$$) {
-    my ($name, $default, $index, $option) = @_;
+sub single_select ($;$$$$$) {
+    my ($name, $default, $index, $onval, $onload, $option) = @_;
     my ($package) = caller;
     
     no strict 'refs';
@@ -549,15 +578,17 @@ sub single_select ($$$$) {
     my $ctxt = ${"${package}::_form_ctxt"};
     
     my $params = $ctxt->{Form};
+    my $fname = $ctxt->{Name};
     
     my $error;
     my ($selected, @options);
     
     # validate
-    if ($params->{'__submitting'}) {
-        if (defined &{"${package}::validate_${name}"}) {
+    if ($params->{"__submitting_$fname"}) {
+        if (my $sub = $package->can($onval || "validate_${name}")) {
             eval {
-                "${package}::validate_${name}"->($ctxt, $params->{$name.$index}, $index);
+                $sub->($ctxt, ($params->get($name.$index))[-1], $index);
+                $params->{$name.$index} = ($params->get($name.$index))[-1];
             };
             $error = $@;
             $ctxt->{_Failed}++ if $error;
@@ -565,10 +596,10 @@ sub single_select ($$$$) {
         }
     }
     # load
-    elsif (defined &{"${package}::load_${name}"}) {
-        ($selected, @options) = "${package}::load_${name}"->($ctxt, $params->{$name.$index}, $default, $index);
+    elsif (my $sub = $package->can($onload || "load_${name}")) {
+        ($selected, @options) = $sub->($ctxt, ($params->get($name.$index))[-1], $default, $index);
     }
-    elsif (!$params->{'__submitting'}) {
+    elsif (!$params->{"__submitting_$fname"}) {
         $selected = $default;
         @options = map { $$_{name}, $$_{value} } @{$option};
     }
@@ -598,8 +629,8 @@ sub single_select ($$$$) {
     };
 }
 
-sub textarea ($;$$$$$) {
-    my ($name, $cols, $rows, $wrap, $default, $index) = @_;
+sub textarea ($;$$$$$$$) {
+    my ($name, $cols, $rows, $wrap, $default, $index, $onval, $onload) = @_;
     
     my ($package) = caller;
     
@@ -608,14 +639,16 @@ sub textarea ($;$$$$$) {
     my $ctxt = ${"${package}::_form_ctxt"};
     
     my $params = $ctxt->{Form};
+    my $fname = $ctxt->{Name};
     
     my $error;
     
     # validate
-    if ($params->{'__submitting'}) {
-        if (defined &{"${package}::validate_${name}"}) {
+    if ($params->{"__submitting_$fname"}) {
+        if (my $sub = $package->can($onval || "validate_${name}")) {
             eval {
-                "${package}::validate_${name}"->($ctxt, $params->{$name.$index}, $index);
+                $sub->($ctxt, ($params->get($name.$index))[-1], $index);
+                $params->{$name.$index} = ($params->get($name.$index))[-1];
             };
             $error = $@;
             $ctxt->{_Failed}++ if $error;
@@ -623,8 +656,8 @@ sub textarea ($;$$$$$) {
         }
     }
     # load
-    elsif (defined &{"${package}::load_${name}"}) {
-        $params->{$name.$index} = "${package}::load_${name}"->($ctxt, $default, $params->{$name.$index}, $index);
+    elsif (my $sub = $package->can($onload || "load_${name}")) {
+        $params->{$name.$index} = $sub->($ctxt, $default, ($params->get($name.$index))[-1], $index);
     }
     else {
         $params->{$name.$index} = $default;
@@ -645,7 +678,7 @@ sub textarea ($;$$$$$) {
             rows => $rows,
             ($wrap ? (wrap => 'wrap') : ()),
             name => $name,
-            value => $params->{$name},
+            value => $params->{$name.$index},
             ($error ? (error => $error) : ()),
 	    index => $index,
             }
@@ -693,9 +726,10 @@ fairly useless. You also need to add callbacks. You'll notice with each of these
 callbacks you recieve a C<$ctxt> object. This is simply an empty hash-ref that
 you can use in the callbacks to maintain state. Actually "empty" is an
 exhageration - it contains two entries always: C<Form> and C<Apache>. "Form" is
-a simply a hashref of the entries in the form. So for example, the firstname
+a simply a hashref of the entries in the form (actually it is an Apache::Table
+object, which allows for supporting multi-valued parameters). So for example, the firstname
 below is in C<$ctxt->{Form}{firstname}>. "Apache" is the C<$r> apache request
-object for the current request.
+object for the current request, which is useful for access to the URI or headers.
 
   sub validate_firstname {
       my ($ctxt, $value) = @_;
@@ -817,6 +851,24 @@ triggered (as part of the submission procedure) and the browser will redirect to
 that handles the purchase of the associated item.
 
 NOTE: arrays not supported for file-upload elements.
+
+=head1 XSP INHERITANCE
+
+Starting with AxKit 1.6.1 it is possible to specify a class which your XSP page inherits
+from. All the validate, load, submit and cancel functions can be in the class you
+inherit from, reducing code duplication, memory usage, and complexity.
+
+=head1 SPECIFYING CALLBACKS
+
+All of the documentation here uses the default callbacks which are implied by the name
+of the form element you give. Unfortunately this makes it difficult to have multiple
+elements with the same validation logic without duplicating code. In order to get around
+this you can manually specify the callbacks to use.
+
+Every main tag supports both C<onvalidate> and C<onload> attributes which specify perl
+function names to validate and load respectively. Submit buttons support C<onsubmit>
+attributes. Cancel buttons support C<oncancel> attributes. Forms themselves support
+both C<oncancel> and C<onsubmit> attributes.
 
 =head1 TAG DOCUMENTATION
 

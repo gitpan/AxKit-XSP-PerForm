@@ -1,7 +1,16 @@
 Revision history for Perl extension AxKit::XSP::PerForm.
 
+1.8
+    - Change to use can() so we can use XSP inheritance
+    - Added onload and onvalidate attributes to each tag (allow to specify
+      external code to validate/load, or use single function for multiple
+      tags)
+    - Better support for multiple forms per page
+    - Numerous other minor bug fixes
+
 1.7
-    - Patch from nachoman to finally properly support single and multiple select
+    - Patch from nachoman to finally properly support single and
+      multiple select
     - Patch from Mark Hershberger fixing:
       - If the error message contains the word "at", everything
         from that "at" to the end of the error is deleted.

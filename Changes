@@ -1,5 +1,14 @@
 Revision history for Perl extension AxKit::XSP::PerForm.
 
+1.7
+    - Patch from nachoman to finally properly support single and multiple select
+    - Patch from Mark Hershberger fixing:
+      - If the error message contains the word "at", everything
+        from that "at" to the end of the error is deleted.
+      - If a load_* function is defined, then the submit_*
+        functions get the value that load_* provides rather than
+        what was submitted.
+
 1.6
     - Removed action from form to allow it to work with Session taglib
 

@@ -114,8 +114,21 @@ $t->{'option'}{'testcode'} = sub {
 $t->{'single_select'}{'testcode'} = sub {
   my ($node, $t) = @_;
   my $name = findvalue('@name|name', $node);
+  my $index = findvalue('@index|index', $node) || '';
   $t->{'pre'} = qq|
-    <select name="$name">
+    <select name="$name$index">
+        |.apply_templates('options/option', $node);
+  $t->{'post'} = "</select>".apply_templates("error", $node);
+  $t->{'showtag'} = 0;
+  return -1;
+};
+
+$t->{'multi_select'}{'testcode'} = sub {
+  my ($node, $t) = @_;
+  my $name = findvalue('@name|name', $node);
+  my $index = findvalue('@index|index', $node) || '';
+  $t->{'pre'} = qq|
+    <select multiple="multiple" name="$name$index">
         |.apply_templates('options/option', $node);
   $t->{'post'} = "</select>".apply_templates("error", $node);
   $t->{'showtag'} = 0;

@@ -12,6 +12,13 @@
   <span class="form_error"><xsl:value-of select="."/></span>
 </xsl:template>
 
+<xsl:template match="form">
+    <xsl:copy>
+        <xsl:copy-of select="@*"/>
+        <xsl:apply-templates/>
+    </xsl:copy>
+</xsl:template>
+
 <xsl:template match="textfield">
     <input 
         type="text"
@@ -67,14 +74,14 @@
 </xsl:template>
 
 <xsl:template match="single_select">
-    <select name="{@name|name}">
+    <select name="{@name|name}{@index|index}">
         <xsl:apply-templates select="options/option"/>
     </select>
     <xsl:apply-templates select="error"/>
 </xsl:template>
 
 <xsl:template match="multi_select">
-  <select multiple="multiple" name="{@name|name}">
+  <select multiple="multiple" name="{@name|name}{@index|index}">
     <xsl:apply-templates select="options/option"/>
   </select>
   <xsl:apply-templates select="error"/>

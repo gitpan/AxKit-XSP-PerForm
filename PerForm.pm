@@ -1,8 +1,8 @@
-# $Id: PerForm.pm,v 1.11 2002/06/11 07:43:00 matt Exp $
+# $Id: PerForm.pm,v 1.13 2002/12/23 14:05:42 matt Exp $
 
 package AxKit::XSP::PerForm;
 
-$VERSION = "1.6";
+$VERSION = "1.7";
 
 use AxKit 1.4;
 use Apache;
@@ -22,8 +22,8 @@ $NS = 'http://axkit.org/NS/xsp/perform/v1';
     'file_upload($name;$value,$accept)',
     'hidden($name;$value,$index)',
     'textarea($name;$cols,$rows,$wrap,$default,$index)',
-    'single_select($name):itemtag=option',
-    'multi_select($name):itemtag=option',
+    'single_select($name;$default,$index,*options):itemtag=option',
+    'multi_select($name;@default,$index,*option):itemtag=option',
 );
 
 use strict;
@@ -169,15 +169,14 @@ sub textfield ($;$$$$) {
             };
             $error = $@;
             $ctxt->{_Failed}++ if $error;
-            $error =~ s/ at .*? line \d+\.$//;
+            $error =~ s/(.*) at .*? line \d+\.$/$1/;
         }
     }
-    
     # load
-    if (defined &{"${package}::load_${name}"}) {
+    elsif (defined &{"${package}::load_${name}"}) {
         $params->{$name.$index} = "${package}::load_${name}"->($ctxt, $default, $params->{$name.$index}, $index);
     }
-    elsif (!$params->{'__submitting'}) {
+    else{ 
         $params->{$name.$index} = $default;
     }
     
@@ -287,6 +286,7 @@ sub button ($;$$) {
 sub checkbox ($;$$$$) {
     my ($name, $value, $checked, $label, $index) = @_;
     my ($package) = caller;
+    $value = 1 unless $value;
     
     no strict 'refs';
     
@@ -304,19 +304,16 @@ sub checkbox ($;$$$$) {
             };
             $error = $@;
             $ctxt->{_Failed}++ if $error;
-            $error =~ s/ at .*? line \d+\.$//;
+            $error =~ s/(.*) at .*? line \d+\.$/$1/;
         }
     }
-    
-    $value = 1 unless $value;
-    
     # load
-    if (defined &{"${package}::load_${name}"}) {
+    elsif (defined &{"${package}::load_${name}"}) {
         my @vals = "${package}::load_${name}"->($ctxt, $params->{$name.$index}, $index);
         $checked = shift @vals;
         $value = shift @vals if @vals;
     }
-    elsif ($params->{'__submitting'}) {
+    else {
         $checked = 1 if defined($params->{$name.$index});
     }
     
@@ -378,15 +375,14 @@ sub file_upload ($;$$) {
             };
             $error = $@;
             $ctxt->{_Failed}++ if $error;
-            $error =~ s/ at .*? line \d+\.$//;
+            $error =~ s/(.*) at .*? line \d+\.$/$1/;
         }
     }
-    
     # load
-    if (defined &{"${package}::load_${name}"}) {
+    elsif (defined &{"${package}::load_${name}"}) {
         $params->{$name} = "${package}::load_${name}"->($ctxt, $value, $params->{$name});
     }
-    elsif (!$params->{'__submitting'}) {
+    else {
         $params->{$name} = $value;
     }
     
@@ -426,8 +422,8 @@ sub hidden ($;$$) {
     };
 }
 
-sub multi_select ($) {
-    my ($name) = @_;
+sub multi_select ($;$$$) {
+    my ($name, $default, $index, $option) = @_;
     my ($package) = caller;
     
     no strict 'refs';
@@ -437,23 +433,26 @@ sub multi_select ($) {
     my $params = $ctxt->{Form};
     
     my $error;
+    my ($selected, @options);
     
     # validate
     if ($params->{'__submitting'}) {
         if (defined &{"${package}::validate_${name}"}) {
             eval {
-                "${package}::validate_${name}"->($ctxt, [$params->get($name)]);
+                "${package}::validate_${name}"->($ctxt, [$params->get($name.$index)], $index);
             };
             $error = $@;
             $ctxt->{_Failed}++ if $error;
-            $error =~ s/ at .*? line \d+\.$//;
+            $error =~ s/(.*) at .*? line \d+\.$/$1/;
         }
     }
-    
     # load
-    my ($selected, @options);
-    if (defined &{"${package}::load_${name}"}) {
-        ($selected, @options) = "${package}::load_${name}"->($ctxt, [$params->get($name)]);
+    elsif (defined &{"${package}::load_${name}"}) {
+        ($selected, @options) = "${package}::load_${name}"->($ctxt, [$params->get($name.$index)], $default, $index);
+    }
+    elsif (!$params->{'__submitting'}) {
+        $selected = [@{$default}];
+        @options = map { $$_{name}, $$_{value} } @{$option};
     }
     
     my %selected = map { $_ => 1 } @$selected;
@@ -469,6 +468,7 @@ sub multi_select ($) {
         multi_select => {
             name => $name,
             ($error ? ( error => $error ) : ()),
+	    index => $index,
             options => [
                 map {
                   { 
@@ -502,15 +502,14 @@ sub password ($;$$$$) {
             };
             $error = $@;
             $ctxt->{_Failed}++ if $error;
-            $error =~ s/ at .*? line \d+\.$//;
+            $error =~ s/(.*) at .*? line \d+\.$/$1/;
         }
     }
-    
     # load
-    if (defined &{"${package}::load_${name}"}) {
+    elsif (defined &{"${package}::load_${name}"}) {
         $params->{$name.$index} = "${package}::load_${name}"->($ctxt, $default, $params->{$name,$index}, $index);
     }
-    elsif (!$params->{'__submitting'}) {
+    else {
         $params->{$name.$index} = $default;
     }
     
@@ -541,8 +540,8 @@ sub reset ($;$) {
     };
 }
 
-sub single_select ($) {
-    my ($name) = @_;
+sub single_select ($$$$) {
+    my ($name, $default, $index, $option) = @_;
     my ($package) = caller;
     
     no strict 'refs';
@@ -552,23 +551,26 @@ sub single_select ($) {
     my $params = $ctxt->{Form};
     
     my $error;
+    my ($selected, @options);
     
     # validate
     if ($params->{'__submitting'}) {
         if (defined &{"${package}::validate_${name}"}) {
             eval {
-                "${package}::validate_${name}"->($ctxt, $params->{$name});
+                "${package}::validate_${name}"->($ctxt, $params->{$name.$index}, $index);
             };
             $error = $@;
             $ctxt->{_Failed}++ if $error;
-            $error =~ s/ at .*? line \d+\.$//;
+            $error =~ s/(.*) at .*? line \d+\.$/$1/;
         }
     }
-    
     # load
-    my ($selected, @options);
-    if (defined &{"${package}::load_${name}"}) {
-        ($selected, @options) = "${package}::load_${name}"->($ctxt, $params->{$name});
+    elsif (defined &{"${package}::load_${name}"}) {
+        ($selected, @options) = "${package}::load_${name}"->($ctxt, $params->{$name.$index}, $default, $index);
+    }
+    elsif (!$params->{'__submitting'}) {
+        $selected = $default;
+        @options = map { $$_{name}, $$_{value} } @{$option};
     }
     
     my (@keys, @vals);
@@ -582,6 +584,7 @@ sub single_select ($) {
         single_select => {
             name => $name,
             ($error ? ( error => $error ) : ()),
+	    index => $index,
             options => [
                 map {
                   { 
@@ -616,15 +619,14 @@ sub textarea ($;$$$$$) {
             };
             $error = $@;
             $ctxt->{_Failed}++ if $error;
-            $error =~ s/ at .*? line \d+\.$//;
+            $error =~ s/(.*) at .*? line \d+\.$/$1/;
         }
     }
-    
     # load
-    if (defined &{"${package}::load_${name}"}) {
+    elsif (defined &{"${package}::load_${name}"}) {
         $params->{$name.$index} = "${package}::load_${name}"->($ctxt, $default, $params->{$name.$index}, $index);
     }
-    elsif (!$params->{'__submitting'}) {
+    else {
         $params->{$name.$index} = $default;
     }
     
@@ -814,7 +816,7 @@ When one of the submit buttons is pressed, the submit_SubmitBuy callback will be
 triggered (as part of the submission procedure) and the browser will redirect to a page
 that handles the purchase of the associated item.
 
-NOTE: arrays not supported for multi-select, single-select or file-upload elements.
+NOTE: arrays not supported for file-upload elements.
 
 =head1 TAG DOCUMENTATION
 
@@ -868,8 +870,9 @@ processing the form contents, but before processing any submit or cancel buttons
 
 =back
 
-Note that <f:form> is the B<only> tag in PerForm that has content. All other tags are empty,
-unless you define the attributes in child tags, as documented above.
+Note that <f:form> is the B<only> tag (besides <f:single-select/> and <f:multi-select/>)
+in PerForm that has content. All other tags are empty, unless you define the attributes
+in child tags, as documented above.
 
 =head2 <f:submit/>
 
@@ -1248,7 +1251,8 @@ use XML::LibXML to do this, like this:
 
 A drop-down select list of items.
 
-Both single-select and multi-select (below) are populated solely by callbacks.
+The single-select and multi-select (below) elements can be populated either by callbacks
+or through embedded elements.
 
 B<Attributes:>
 
@@ -1257,6 +1261,37 @@ B<Attributes:>
 =item name (mandatory)
 
 The name of the single select widget.
+
+=item default
+
+The default value that is to be selected.
+
+=item index
+
+Use this to identify the array index when using arrayed form elements.
+
+=back
+
+B<Elements:>
+
+=over 4
+
+=item <f:options>
+
+Child to a <f:single-select> element, this wraps around a listing of
+populated options
+
+=item <option>
+
+Child to <f:options>, this is an individual option
+
+=item <name>
+
+This is the name for a given option, to which it is a child
+
+=item <value>
+
+Similar to <name>, this indicates the value for an option
 
 =back
 
@@ -1300,7 +1335,22 @@ B<Attributes:>
 
 The name of the multiple select widget.
 
+=item default
+
+The default value that is to be selected.  This can be specified as
+a child element (e.g. <f:default>) in order to indicate multiple
+default values.
+
+=item index
+
+Use this to identify the array index when using arrayed form elements.
+
 =back
+
+B<Elements:>
+
+The available child elements are identical to <f:single-select> so they will
+not be repeated here.
 
 B<Callbacks:>
 

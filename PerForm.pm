@@ -1,13 +1,13 @@
-# $Id: PerForm.pm,v 1.20 2003/06/16 08:16:25 matt Exp $
+# $Id: PerForm.pm,v 1.21 2003/06/16 16:21:00 matt Exp $
 
 package AxKit::XSP::PerForm;
 
-$VERSION = "1.8";
+$VERSION = "1.81";
 
 use AxKit 1.4;
 use Apache;
 use Apache::AxKit::Language::XSP::TaglibHelper;
-use AxKit::XSP::WebUtils;
+use AxKit::XSP::WebUtils 1.5;
 
 $NS = 'http://axkit.org/NS/xsp/perform/v1';
 
@@ -474,10 +474,10 @@ sub multi_select ($;$$$$$) {
         }
     }
     # load
-    elsif (my $sub = $package->can($onload || "load_${name}")) {
+    if (my $sub = $package->can($onload || "load_${name}")) {
         ($selected, @options) = $sub->($ctxt, [$params->get($name.$index)], $default, $index);
     }
-    elsif (!$params->{"__submitting_$fname"}) {
+    else {
         $selected = [@{$default}];
         @options = map { $$_{name}, $$_{value} } @{$option};
     }
@@ -596,10 +596,10 @@ sub single_select ($;$$$$$) {
         }
     }
     # load
-    elsif (my $sub = $package->can($onload || "load_${name}")) {
+    if (my $sub = $package->can($onload || "load_${name}")) {
         ($selected, @options) = $sub->($ctxt, ($params->get($name.$index))[-1], $default, $index);
     }
-    elsif (!$params->{"__submitting_$fname"}) {
+    else {
         $selected = $default;
         @options = map { $$_{name}, $$_{value} } @{$option};
     }

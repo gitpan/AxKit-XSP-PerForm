@@ -4,5 +4,5 @@ use ExtUtils::MakeMaker;
 WriteMakefile(
     'NAME'	=> 'AxKit::XSP::PerForm',
     'VERSION_FROM' => 'PerForm.pm', # finds $VERSION
-    'PREREQ_PM' => { 'AxKit' => 1.4, 'AxKit::XSP::WebUtils' => 1.3 },
+    'PREREQ_PM' => { 'AxKit' => 1.4, 'AxKit::XSP::WebUtils' => 1.5 },
 );

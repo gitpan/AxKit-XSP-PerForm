@@ -1,8 +1,8 @@
-# $Id: PerForm.pm,v 1.21 2003/06/16 16:21:00 matt Exp $
+# $Id: PerForm.pm,v 1.23 2003/06/24 10:17:29 matt Exp $
 
 package AxKit::XSP::PerForm;
 
-$VERSION = "1.81";
+$VERSION = "1.82";
 
 use AxKit 1.4;
 use Apache;
@@ -14,16 +14,16 @@ $NS = 'http://axkit.org/NS/xsp/perform/v1';
 @ISA = qw(Apache::AxKit::Language::XSP);
 
 @EXPORT_TAGLIB = (
-    'textfield($name;$default,$width,$maxlength,$index,$onvalidate,$onload)',
-    'password($name;$default,$width,$maxlength,$index,$onvalidate,$onload)',
-    'submit($name;$value,$image,$alt,$border,$align,$goto,$index,$onsubmit)',
-    'cancel($name;$value,$image,$alt,$border,$align,$goto,$index,$oncancel)',
-    'checkbox($name;$value,$checked,$label,$index,$onvalidate,$onload)',
-    'file_upload($name;$value,$accept,$onvalidate,$onload)',
+    'textfield($name;$default,$width,$maxlength,$index,$onvalidate,$onload,$disabled,$onchange)',
+    'password($name;$default,$width,$maxlength,$index,$onvalidate,$onload,$disabled,$onchange)',
+    'submit($name;$value,$image,$alt,$border,$align,$goto,$index,$onsubmit,$disabled,$onclick)',
+    'cancel($name;$value,$image,$alt,$border,$align,$goto,$index,$oncancel,$disabled,$onclick)',
+    'checkbox($name;$value,$checked,$label,$index,$onvalidate,$onload,$disabled,$onclick)',
+    'file_upload($name;$value,$accept,$onvalidate,$onload,$disabled,$onclick)',
     'hidden($name;$value,$index,$onload)',
-    'textarea($name;$cols,$rows,$wrap,$default,$index,$onvalidate,$onload)',
-    'single_select($name;$default,$index,$onvalidate,$onload,*options):itemtag=option',
-    'multi_select($name;@default,$index,$onvalidate,$onload,*option):itemtag=option',
+    'textarea($name;$cols,$rows,$wrap,$default,$index,$onvalidate,$onload,$disabled,$onchange)',
+    'single_select($name;$default,$index,$onvalidate,$onload,$disabled,$onchange,*options):itemtag=option',
+    'multi_select($name;@default,$index,$onvalidate,$onload,$disabled,$onclick,*option):itemtag=option',
 );
 
 use strict;
@@ -165,8 +165,9 @@ EOT
     }
 }
 
-sub textfield ($;$$$$$$) {
-    my ($name, $default, $width, $maxlength, $index, $onval, $onload) = @_;
+sub textfield ($;$$$$$$$$) {
+    my ($name, $default, $width, $maxlength, $index, $onval, $onload,
+        $disabled, $onchange) = @_;
     my ($package) = caller;
     
     no strict 'refs';
@@ -206,13 +207,16 @@ sub textfield ($;$$$$$$) {
             name => $name,
             value => ($params->get($name.$index))[-1],
 	    index => $index,
+            ($disabled ? (disabled => $disabled) : ()),
+            ($onchange ? (onchange => $onchange) : ()),
             ($error ? (error => $error) : ()),
             }
         };
 }
 
-sub submit ($;$$$$$$$$) {
-    my ($name, $value, $image, $alt, $border, $align, $goto, $index, $onsubmit) = @_;
+sub submit ($;$$$$$$$$$$) {
+    my ($name, $value, $image, $alt, $border, $align, $goto, $index,
+        $onsubmit, $disabled, $onclick) = @_;
     my ($package) = caller;
     
     no strict 'refs';
@@ -236,6 +240,8 @@ sub submit ($;$$$$$$$$) {
                 alt => $alt,
                 border => $border || 0,
                 align => $align || "bottom",
+                ($disabled ? (disabled => $disabled) : ()),
+                ($onclick ? (onclick => $onclick) : ()),
 		index => $index,
             }
         };
@@ -246,13 +252,16 @@ sub submit ($;$$$$$$$$) {
                 name => $name,
                 value => $value,
 		index => $index,
+                ($disabled ? (disabled => $disabled) : ()),
+                ($onclick ? (onclick => $onclick) : ()),
             }
         };
     }
 }
 
-sub cancel ($;$$$$$$$$) {
-    my ($name, $value, $image, $alt, $border, $align, $goto, $index, $oncancel) = @_;
+sub cancel ($;$$$$$$$$$$) {
+    my ($name, $value, $image, $alt, $border, $align, $goto, $index,
+        $oncancel, $disabled, $onclick) = @_;
     my ($package) = caller;
     
     no strict 'refs';
@@ -277,6 +286,8 @@ sub cancel ($;$$$$$$$$) {
                 border => $border || 0,
                 align => $align || "bottom",
 		index => $index,
+                ($disabled ? (disabled => $disabled) : ()),
+                ($onclick ? (onclick => $onclick) : ()),
             }
         };
     }
@@ -286,6 +297,8 @@ sub cancel ($;$$$$$$$$) {
                 name => $name,
                 value => $value,
 		index => $index,
+                ($disabled ? (disabled => $disabled) : ()),
+                ($onclick ? (onclick => $onclick) : ()),
             }
         };
     }
@@ -304,8 +317,10 @@ sub button ($;$$) {
     # TODO: What do we want buttons to do?
 }
 
-sub checkbox ($;$$$$$$) {
-    my ($name, $value, $checked, $label, $index, $onval, $onload) = @_;
+sub checkbox ($;$$$$$$$$) {
+    my ($name, $value, $checked, $label, $index, $onval, $onload,
+        $disabled, $onclick) = @_;
+
     my ($package) = caller;
     $value = 1 unless $value;
     
@@ -355,12 +370,14 @@ sub checkbox ($;$$$$$$) {
             label => $label,
             ( $error ? (error => $error) : () ),
 	    index => $index,
+            ($disabled ? (disabled => $disabled) : ()),
+            ($onclick ? (onclick => $onclick) : ()),
         }
     };
 }
 
-sub file_upload ($;$$$$) {
-    my ($name, $value, $accept, $onval, $onload) = @_;
+sub file_upload ($;$$$$$$) {
+    my ($name, $value, $accept, $onval, $onload, $disabled, $onclick) = @_;
     my ($package) = caller;
     
     no strict 'refs';
@@ -415,6 +432,8 @@ sub file_upload ($;$$$$) {
             name => $name,
             value => $params->{$name},
             accept => $accept,
+            ($disabled ? (disabled => $disabled) : ()),
+            ($onclick ? (onclick => $onclick) : ()),
             ($error ? (error => $error) : ()),
         }
     };
@@ -448,8 +467,8 @@ sub hidden ($;$$$) {
     };
 }
 
-sub multi_select ($;$$$$$) {
-    my ($name, $default, $index, $onval, $onload, $option) = @_;
+sub multi_select ($;$$$$$$$) {
+    my ($name, $default, $index, $onval, $onload, $disabled, $onclick, $option) = @_;
     my ($package) = caller;
     
     no strict 'refs';
@@ -496,6 +515,8 @@ sub multi_select ($;$$$$$) {
             name => $name,
             ($error ? ( error => $error ) : ()),
 	    index => $index,
+            ($disabled ? (disabled => $disabled) : ()),
+            ($onclick ? (onclick => $onclick) : ()),
             options => [
                 map {
                   { 
@@ -509,8 +530,9 @@ sub multi_select ($;$$$$$) {
     };
 }
 
-sub password ($;$$$$$$) {
-    my ($name, $default, $width, $maxlength, $index, $onval, $onload) = @_;
+sub password ($;$$$$$$$$) {
+    my ($name, $default, $width, $maxlength, $index, $onval, $onload,
+        $disabled, $onchange) = @_;
     my ($package) = caller;
     
     no strict 'refs';
@@ -550,6 +572,8 @@ sub password ($;$$$$$$) {
             value => ($params->get($name.$index))[-1],
             ($error ? (error => $error) : ()),
 	    index => $index,
+            ($disabled ? (disabled => $disabled) : ()),
+            ($onchange ? (onchange => $onchange) : ()),
             }
         };
 }
@@ -569,8 +593,10 @@ sub reset ($;$) {
     };
 }
 
-sub single_select ($;$$$$$) {
-    my ($name, $default, $index, $onval, $onload, $option) = @_;
+sub single_select ($;$$$$$$$) {
+    my ($name, $default, $index, $onval, $onload,
+        $disabled, $onchange, $option) = @_;
+
     my ($package) = caller;
     
     no strict 'refs';
@@ -616,6 +642,8 @@ sub single_select ($;$$$$$) {
             name => $name,
             ($error ? ( error => $error ) : ()),
 	    index => $index,
+            ($disabled ? (disabled => $disabled) : ()),
+            ($onchange ? (onchange => $onchange) : ()),
             options => [
                 map {
                   { 
@@ -629,8 +657,9 @@ sub single_select ($;$$$$$) {
     };
 }
 
-sub textarea ($;$$$$$$$) {
-    my ($name, $cols, $rows, $wrap, $default, $index, $onval, $onload) = @_;
+sub textarea ($;$$$$$$$$$) {
+    my ($name, $cols, $rows, $wrap, $default, $index, $onval, $onload,
+        $disabled, $onchange) = @_;
     
     my ($package) = caller;
     
@@ -681,6 +710,8 @@ sub textarea ($;$$$$$$$) {
             value => $params->{$name.$index},
             ($error ? (error => $error) : ()),
 	    index => $index,
+            ($disabled ? (disabled => $disabled) : ()),
+            ($onchange ? (onchange => $onchange) : ()),
             }
         };
 }
@@ -698,19 +729,19 @@ AxKit::XSP::PerForm - XSP Taglib for making complex forms easy
 
 =head1 DESCRIPTION
 
-PerForm is a large and complex taglib for AxKit XSP that facilitates creating
-large and complex HTML, WML, or other types of data-entry forms. PerForm tends to
-make life easier for you if your form data is coming from different data sources,
-such as DBI, or even XML.
+PerForm is a large and complex taglib for AxKit XSP that facilitates
+creating large and complex HTML, WML, or other types of data-entry forms.
+PerForm tends to make life easier for you if your form data is coming from
+different data sources, such as DBI, or even XML.
 
-PerForm works as an XSP taglib, meaning you simply add some custom XML tags to
-your XSP page, and PerForm does the rest. Well, almost... PerForm works mainly
-by callbacks, as you will see below.
+PerForm works as an XSP taglib, meaning you simply add some custom XML tags
+to your XSP page, and PerForm does the rest. Well, almost... PerForm works
+mainly by callbacks, as you will see below.
 
 =head1 EXAMPLE FORM
 
-Ignoring the outside XSP and namespace declarations, assuming the prefix "f" is
-bound to the PerForm namespace:
+Ignoring the outside XSP and namespace declarations, assuming the prefix "f"
+is bound to the PerForm namespace:
 
   <f:form name="add_user">
    First name: <f:textfield name="firstname" width="30" maxlength="50"/>
@@ -721,15 +752,16 @@ bound to the PerForm namespace:
    <f:cancel name="cancel" value="Cancel" goto="home.html" />
   </f:form>
 
-Now it is important to bear in mind that this is just the form, and alone it is
-fairly useless. You also need to add callbacks. You'll notice with each of these
-callbacks you recieve a C<$ctxt> object. This is simply an empty hash-ref that
-you can use in the callbacks to maintain state. Actually "empty" is an
-exhageration - it contains two entries always: C<Form> and C<Apache>. "Form" is
-a simply a hashref of the entries in the form (actually it is an Apache::Table
-object, which allows for supporting multi-valued parameters). So for example, the firstname
-below is in C<$ctxt->{Form}{firstname}>. "Apache" is the C<$r> apache request
-object for the current request, which is useful for access to the URI or headers.
+Now it is important to bear in mind that this is just the form, and alone it
+is fairly useless. You also need to add callbacks. You'll notice with each
+of these callbacks you recieve a C<$ctxt> object. This is simply an empty
+hash-ref that you can use in the callbacks to maintain state. Actually
+"empty" is an exhageration - it contains two entries always: C<Form> and
+C<Apache>. "Form" is a simply a hashref of the entries in the form (actually
+it is an Apache::Table object, which allows for supporting multi-valued
+parameters). So for example, the firstname below is in
+C<$ctxt->{Form}{firstname}>. "Apache" is the C<$r> apache request object for
+the current request, which is useful for access to the URI or headers.
 
   sub validate_firstname {
       my ($ctxt, $value) = @_;
@@ -750,11 +782,12 @@ object for the current request, which is useful for access to the URI or headers
       warn("User: ", $ctxt->{Form}{firstname}, " ", $ctxt->{Form}{lastname}, "\n");
   }
 
-Now these methods need to be global to your XSP page, rather than "closures" within 
-the XSP page's main handler routine. How do you do that? Well it's simple. Just put
-them within a <xsp:logic> section before any user defined tags. For example, if your
-XSP page happens to use XHTML as it's basic format (something I do a lot), your page
-might be constructed as follows (namespace declarations omitted for brevity):
+Now these methods need to be global to your XSP page, rather than "closures"
+within the XSP page's main handler routine. How do you do that? Well it's
+simple. Just put them within a <xsp:logic> section before any user defined
+tags. For example, if your XSP page happens to use XHTML as it's basic
+format (something I do a lot), your page might be constructed as follows
+(namespace declarations omitted for brevity):
 
   <xsp:page>
     <xsp:logic>
@@ -772,41 +805,45 @@ might be constructed as follows (namespace declarations omitted for brevity):
     </html>
   </xsp:page>
 
-[Note that the page-global methods is a useful technique in other situations, because
-unlike Apache::Registry scripts, this won't create a closure from methods defined there].
+[Note that the page-global methods is a useful technique in other
+situations, because unlike Apache::Registry scripts, this won't create a
+closure from methods defined there].
 
 =head1 SUBMISSION PROCEDURE
 
-In PerForm, all forms submit back to themselves. This allows us to implement the callback
-system. Of course with most forms, you want to go somewhere else once you've processed
-the form. So for this, we issue redirects once the form has been processed. This has the
-advantage that you can't hit reload by accident and have the form re-submitted.
+In PerForm, all forms submit back to themselves. This allows us to implement
+the callback system. Of course with most forms, you want to go somewhere
+else once you've processed the form. So for this, we issue redirects once
+the form has been processed. This has the advantage that you can't hit
+reload by accident and have the form re-submitted.
 
-To define where you go on hitting submit, you can either return set the I<goto> attribute
-on the submit or cancel button, or implement a callback and return a URI to redirect to.
+To define where you go on hitting submit, you can either return set the
+I<goto> attribute on the submit or cancel button, or implement a callback
+and return a URI to redirect to.
 
 =head1 THE CONTEXT OBJECT
 
-Each of the form callbacks is passed a context object. This is a hashref you are allowed
-to use to maintain state between your callbacks. There is a new context object created
-for every form on your XSP page. There are two entries filled in automatically into
-the hashref for you:
+Each of the form callbacks is passed a context object. This is a hashref you
+are allowed to use to maintain state between your callbacks. There is a new
+context object created for every form on your XSP page. There are two
+entries filled in automatically into the hashref for you:
 
 =over 4
 
 =item Form
 
-This is actually an Apache::Table object, so it looks and works just like an ordinary
-hashref, and contains the values submitted from the form, or is perhaps empty if the
-form hasn't been submitted yet. It may also contain any parameters passed in the
-querystring. For multi-value parameters, they can be accessed via Apache::Table's
-get, add and set methods. See L<Apache::Table>.
+This is actually an Apache::Table object, so it looks and works just like an
+ordinary hashref, and contains the values submitted from the form, or is
+perhaps empty if the form hasn't been submitted yet. It may also contain any
+parameters passed in the querystring. For multi-value parameters, they can
+be accessed via Apache::Table's get, add and set methods. See
+L<Apache::Table>.
 
 =item Apache
 
-The Apache entry is the apache request object for the current request. You can use
-this, for example, to get the current URI, or to get something out of dir_config,
-or perhaps to send a header. See L<Apache>.
+The Apache entry is the apache request object for the current request. You
+can use this, for example, to get the current URI, or to get something out
+of dir_config, or perhaps to send a header. See L<Apache>.
 
 =back
 
@@ -818,11 +855,11 @@ And you can later get at that in another callback via C<$ctxt->{my_key}>.
 
 =head1 ARRAYED FORM ELEMENTS
 
-Sometimes you need to display a list of items in your form where the 
-number of items is not known until runtime.  Use arrayed form elements to trigger 
-the same callback for each item in the list.  When setting up each element, use 
-an index to identify each member of the list.  The callbacks will be passed the 
-index as a parameter.  e.g.
+Sometimes you need to display a list of items in your form where the number
+of items is not known until runtime.  Use arrayed form elements to trigger
+the same callback for each item in the list.  When setting up each element,
+use an index to identify each member of the list.  The callbacks will be
+passed the index as a parameter.  e.g.
 
 Your form may have a section like this:
 
@@ -844,41 +881,49 @@ The submit callback might be:
     return "purchase.xsp?item=$index";
   }
 
-This example produces a list of items with a 'Buy me' button next to each one.  Each 
-button has an index that corresponds an array index of an item in the shopping list.
-When one of the submit buttons is pressed, the submit_SubmitBuy callback will be 
-triggered (as part of the submission procedure) and the browser will redirect to a page
-that handles the purchase of the associated item.
+This example produces a list of items with a 'Buy me' button next to each
+one.  Each button has an index that corresponds an array index of an item in
+the shopping list. When one of the submit buttons is pressed, the
+submit_SubmitBuy callback will be triggered (as part of the submission
+procedure) and the browser will redirect to a page that handles the purchase
+of the associated item.
 
 NOTE: arrays not supported for file-upload elements.
 
 =head1 XSP INHERITANCE
 
-Starting with AxKit 1.6.1 it is possible to specify a class which your XSP page inherits
-from. All the validate, load, submit and cancel functions can be in the class you
-inherit from, reducing code duplication, memory usage, and complexity.
+Starting with AxKit 1.6.1 it is possible to specify a class which your XSP
+page inherits from. All the validate, load, submit and cancel functions can
+be in the class you inherit from, reducing code duplication, memory usage,
+and complexity.
 
 =head1 SPECIFYING CALLBACKS
 
-All of the documentation here uses the default callbacks which are implied by the name
-of the form element you give. Unfortunately this makes it difficult to have multiple
-elements with the same validation logic without duplicating code. In order to get around
-this you can manually specify the callbacks to use.
+All of the documentation here uses the default callbacks which are implied
+by the name of the form element you give. Unfortunately this makes it
+difficult to have multiple elements with the same validation logic without
+duplicating code. In order to get around this you can manually specify the
+callbacks to use.
 
-Every main tag supports both C<onvalidate> and C<onload> attributes which specify perl
-function names to validate and load respectively. Submit buttons support C<onsubmit>
-attributes. Cancel buttons support C<oncancel> attributes. Forms themselves support
-both C<oncancel> and C<onsubmit> attributes.
+Every main tag supports both C<onvalidate> and C<onload> attributes which
+specify perl function names to validate and load respectively. Submit
+buttons support C<onsubmit> attributes. Cancel buttons support C<oncancel>
+attributes. Forms themselves support both C<oncancel> and C<onsubmit>
+attributes.
+
+All tags allow a C<disabled> attribute. Set this to a true value (i.e.
+C<disabled="1">) to set the control to disabled. This will be interpreted
+as a HTML 4.0 feature in the default perform stylesheet.
 
 =head1 TAG DOCUMENTATION
 
-The following documentation uses the prefix I<f:> for all PerForm tags. This assumes you
-have a namespace declaration C<xmlns:f="http://axkit.org/NS/xsp/perform/v1"> in your
-XSP file.
+The following documentation uses the prefix I<f:> for all PerForm tags. This
+assumes you have a namespace declaration
+C<xmlns:f="http://axkit.org/NS/xsp/perform/v1"> in your XSP file.
 
-Please note that for all of the widget tags, PerForm uses TaglibHelper. This has the
-advantage that you can define attributes either as XML attributes in the tag, or
-as child tags in the PerForm namespace. So:
+Please note that for all of the widget tags, PerForm uses TaglibHelper. This
+has the advantage that you can define attributes either as XML attributes in
+the tag, or as child tags in the PerForm namespace. So:
 
   <f:textfield name="foo" default="bar"/>
 
@@ -888,13 +933,15 @@ Is exactly equivalent to:
     <f:default>bar</f:default>
   </f:textfield>
 
-The advantage of this is that child tags can get their content from other XSP tags.
+The advantage of this is that child tags can get their content from other
+XSP tags.
 
 =head2 <f:form>
 
-This tag has to be around the main form components. It does not have to have any ACTION
-or METHOD attributes, as that is all sorted out internally. Note that you can have as
-many f:form tags on a page as you want, but it probably doesn't make sense to nest them.
+This tag has to be around the main form components. It does not have to have
+any ACTION or METHOD attributes, as that is all sorted out internally. Note
+that you can have as many f:form tags on a page as you want, but it probably
+doesn't make sense to nest them.
 
 B<Attributes:>
 
@@ -902,7 +949,8 @@ B<Attributes:>
 
 =item name
 
-The name of the form. This name is used to call start_form_<name>, and end_form_<name>.
+The name of the form. This name is used to call start_form_<name>, and
+end_form_<name>.
 
 =back
 
@@ -912,23 +960,25 @@ B<Callbacks:>
 
 =item start_form_<name>
 
-Passed a single parameter: C<$ctxt>, the context object. This callback is called before
-processing the form contents.
+Passed a single parameter: C<$ctxt>, the context object. This callback is
+called before processing the form contents.
 
 =item end_form_<name>
 
-Passed a single parameter: C<$ctxt>, the context object. This callback is called after
-processing the form contents, but before processing any submit or cancel buttons.
+Passed a single parameter: C<$ctxt>, the context object. This callback is
+called after processing the form contents, but before processing any submit
+or cancel buttons.
 
 =back
 
-Note that <f:form> is the B<only> tag (besides <f:single-select/> and <f:multi-select/>)
-in PerForm that has content. All other tags are empty, unless you define the attributes
-in child tags, as documented above.
+Note that <f:form> is the B<only> tag (besides <f:single-select/> and
+<f:multi-select/>) in PerForm that has content. All other tags are empty,
+unless you define the attributes in child tags, as documented above.
 
 =head2 <f:submit/>
 
-A submit button. Every form should have one, otherwise there is little point in having a form!
+A submit button. Every form should have one, otherwise there is little point
+in having a form!
 
 B<Attributes:>
 
@@ -962,13 +1012,20 @@ The alignment of the button
 
 If you do not wish to implement the callback below, you can set the goto
 attribute to a URI to redirect to when the user hits the button. Normally
-you won't use this unless you happen to not want to save the form values
-in any way.
+you won't use this unless you happen to not want to save the form values in
+any way.
 
 =item index
 
 If your button is a member of an array, then set the index attribute to the
 corresponding array index.
+
+=item onclick
+
+This attribute is intended to be passed through to the generated
+output for client-side onClick routines (usually written in javascript).
+Simply specify a string as you would if writing dynamic html
+forms in plain HTML.
 
 =back
 
@@ -979,21 +1036,24 @@ B<Callbacks:>
 =item submit_<name> ( $ctxt , $index )
 
 This callback is used to "do something" with the submitted form values. You
-might write them to a database or a file, or change something in your application.
+might write them to a database or a file, or change something in your
+application.
 
-The $index parameter identifies which button was pressed in an array of buttons.
+The $index parameter identifies which button was pressed in an array of
+buttons.
 
-The return value from submit_<name> is used to redirect the user to the "next"
-page, whatever that might be.
+The return value from submit_<name> is used to redirect the user to the
+"next" page, whatever that might be.
 
 =back
 
 =head2 <f:cancel/>
 
-A cancel button. This is similar to the submit button, but instead of being used
-to save the form values (or "do something" with them), should be used to cancel
-the use of this particular form and go somewhere else. The most common use of this
-is to simply set the I<goto> attribute to redirect to another page.
+A cancel button. This is similar to the submit button, but instead of being
+used to save the form values (or "do something" with them), should be used
+to cancel the use of this particular form and go somewhere else. The most
+common use of this is to simply set the I<goto> attribute to redirect to
+another page.
 
 B<Attributes:>
 
@@ -1005,8 +1065,9 @@ B<Callbacks:>
 
 =item cancel_<name> ( $ctxt, $index )
 
-Implement this method to override the goto attribute. Return the URI you want to redirect
-to. This can be used to dynamically generate the URI to redirect to.
+Implement this method to override the goto attribute. Return the URI you
+want to redirect to. This can be used to dynamically generate the URI to
+redirect to.
 
 =back
 
@@ -1020,9 +1081,9 @@ B<Attributes:>
 
 =item name (mandatory)
 
-The name of the textfield. Should be unique to the entire XSP page, as callbacks only use
-the widget name. Can also be used in C<$ctxt-E<gt>{Form}{E<lt>nameE<gt>}> to retrieve the
-value.
+The name of the textfield. Should be unique to the entire XSP page, as
+callbacks only use the widget name. Can also be used in
+C<$ctxt-E<gt>{Form}{E<lt>nameE<gt>}> to retrieve the value.
 
 =item default
 
@@ -1030,8 +1091,8 @@ A default value for the textfield.
 
 =item width
 
-The width of the textfield on the screen. Units are dependant on the final rendering
-method - for HTML this would be em characters.
+The width of the textfield on the screen. Units are dependant on the final
+rendering method - for HTML this would be em characters.
 
 =item maxlength
 
@@ -1039,8 +1100,14 @@ The maximum number of characters you can enter into this text field.
 
 =item index
 
-If your text field is a member of an array, then set the index attribute to the
-corresponding array index.
+If your text field is a member of an array, then set the index attribute to
+the corresponding array index.
+
+=item onchange
+
+This is a javascript callback implemented on the client side in HTML 4.0
+capable browsers. It simply passes the value through to the generated
+HTML.
 
 =back
 
@@ -1050,22 +1117,23 @@ B<Callbacks:>
 
 =item load_<name> ( $ctxt, $default, $current, $index )
 
-Used to load a value into the edit box. The default is from the attributes above. The
-current value is only set if this form has been submitted once already, and contains
-the value submitted.
+Used to load a value into the edit box. The default is from the attributes
+above. The current value is only set if this form has been submitted once
+already, and contains the value submitted.
 
 Simply return the value you want to appear in the textfield.
 
-If the text field is a memeber of an array, then $index will be the array index.
+If the text field is a memeber of an array, then $index will be the array
+index.
 
 If you do not implement this method, the value in the textfield defaults to
 C<$current || $default>.
 
 =item validate_<name> ( $ctxt, $value, $index )
 
-Implement this method to validate the contents of the textfield. If the value is valid,
-you don't need to do anything. However if it invalid, throw an exception with the reason
-why it is invalid. Example:
+Implement this method to validate the contents of the textfield. If the
+value is valid, you don't need to do anything. However if it invalid, throw
+an exception with the reason why it is invalid. Example:
 
   sub validate_username {
       my ($ctxt, $value) = @_;
@@ -1076,14 +1144,15 @@ why it is invalid. Example:
       die "Invalid characters" if $value =~ /\W/;
   }
 
-If the text field is a memeber of an array, then $index will be the array index.
+If the text field is a memeber of an array, then $index will be the array
+index.
 
 =back
 
 =head2 <f:password/>
 
-A password entry field. This works B<exactly> the same way as a textfield, so we don't
-duplicate the documentation here
+A password entry field. This works B<exactly> the same way as a textfield,
+so we don't duplicate the documentation here
 
 =head2 <f:checkbox/>
 
@@ -1103,17 +1172,24 @@ The value that gets sent to the server when this checkbox is checked.
 
 =item checked
 
-Set to 1 or yes to have this checkbox checked by default. Set to 0, no, or leave
-off altogether to have it unchecked.
+Set to 1 or yes to have this checkbox checked by default. Set to 0, no, or
+leave off altogether to have it unchecked.
 
 =item label
 
-Used in HTML 4.0, the label for the checkbox. Use this with care as most browsers
-don't support it.
+Used in HTML 4.0, the label for the checkbox. Use this with care as most
+browsers don't support it.
 
 =item index
 
 Use this to identify the array index when using arrayed form elements.
+
+=item onclick
+
+This attribute is intended to be passed through to the generated
+output for client-side onClick routines (usually written in javascript).
+Simply specify a string as you would if writing dynamic html
+forms in plain HTML.
 
 =back
 
@@ -1123,22 +1199,24 @@ B<Callbacks:>
 
 =item load_<name> ( $ctxt, $current, $index )
 
-If you implement this method, you can change the default checked state of the
-checkbox, and the value returned by the checkbox if you need to.
+If you implement this method, you can change the default checked state of
+the checkbox, and the value returned by the checkbox if you need to.
 
-Return one or two values. The first value is whether the box is checked or not,
-and the second optional value is what value is sent to the server when the checkbox
-is checked and submitted.
+Return one or two values. The first value is whether the box is checked or
+not, and the second optional value is what value is sent to the server when
+the checkbox is checked and submitted.
 
 =item validate_<name> ( $ctxt, $value, $index )
 
-Validate the value in the checkbox. Throw an exception to indicate validation failure.
+Validate the value in the checkbox. Throw an exception to indicate
+validation failure.
 
 =back
 
 =head2 <f:file-upload/>
 
-A file upload field (normally in HTML, a text entry box, and a "Browse..." button).
+A file upload field (normally in HTML, a text entry box, and a "Browse..."
+button).
 
 B<Attributes:>
 
@@ -1150,13 +1228,20 @@ The name of the file upload field.
 
 =item value
 
-A default filename to put in the box. Use with care because putting something in here
-is not very user friendly!
+A default filename to put in the box. Use with care because putting
+something in here is not very user friendly!
 
 =item accept
 
-A list of MIME types to accept in this dialog box. Some browsers might use this in the
-Browse dialog to restrict the list of files to show.
+A list of MIME types to accept in this dialog box. Some browsers might use
+this in the Browse dialog to restrict the list of files to show.
+
+=item onclick
+
+This attribute is intended to be passed through to the generated
+output for client-side onClick routines (usually written in javascript).
+Simply specify a string as you would if writing dynamic html
+forms in plain HTML.
 
 =back
 
@@ -1166,16 +1251,18 @@ B<Callbacks:>
 
 =item load_<name> ( $ctxt, $default, $current )
 
-Load a new value into the file upload field. Return the value to go in the field.
+Load a new value into the file upload field. Return the value to go in the
+field.
 
 =item validate_<name> ( $ctxt, $filename, $fh, $size, $type, $info )
 
-Validate the uploaded file. This is also actually the place where you would save the
-file to disk somewhere, by reading from $fh and writing to somewhere else, or using
-File::Copy to do that for you. It is much harder to access the file from the submit
-callback.
+Validate the uploaded file. This is also actually the place where you would
+save the file to disk somewhere, by reading from $fh and writing to
+somewhere else, or using File::Copy to do that for you. It is much harder to
+access the file from the submit callback.
 
-If the file is somehow invalid, throw an exception with the text of why it is invalid.
+If the file is somehow invalid, throw an exception with the text of why it
+is invalid.
 
 =back
 
@@ -1183,10 +1270,10 @@ If the file is somehow invalid, throw an exception with the text of why it is in
 
 A hidden form field, for storing persistent information across submits.
 
-PerForm hidden fields are quite useful because they are self validating against
-modification between submits, so if a malicious user tries to change the value by
-editing the querystring or changing the form value somehow, the execution of your
-script will die with an exception.
+PerForm hidden fields are quite useful because they are self validating
+against modification between submits, so if a malicious user tries to change
+the value by editing the querystring or changing the form value somehow, the
+execution of your script will die with an exception.
 
 B<Attributes:>
 
@@ -1212,8 +1299,8 @@ B<Callbacks:>
 
 =item load_<name> ( $ctxt, $default, $index )
 
-If you wish the value to be dynamic somehow, implement this callback and return a
-new value for the hidden field.
+If you wish the value to be dynamic somehow, implement this callback and
+return a new value for the hidden field.
 
 =back
 
@@ -1241,8 +1328,8 @@ The number of rows of text to display.
 
 =item wrap
 
-Set this to "yes" or "1" to have the textarea wrap the text automatically. Set to
-"no" or leave blank to not wrap. Default is to not wrap.
+Set this to "yes" or "1" to have the textarea wrap the text automatically.
+Set to "no" or leave blank to not wrap. Default is to not wrap.
 
 =item default
 
@@ -1252,6 +1339,12 @@ The default text to put in the textarea.
 
 Use this to identify the array index when using arrayed form elements.
 
+=item onchange
+
+This is a javascript callback implemented on the client side in HTML 4.0
+capable browsers. It simply passes the value through to the generated
+HTML.
+
 =back
 
 B<Callbacks:>
@@ -1260,14 +1353,15 @@ B<Callbacks:>
 
 =item load_<name> ( $ctxt, $default, $current, $index )
 
-Load a new value into the widget. Return the string you want to appear in the box.
+Load a new value into the widget. Return the string you want to appear in
+the box.
 
 =item validate_<name> ( $ctxt, $value, $index )
 
-Validate the contents of the textarea. If the contents are somehow invalid, throw
-an exception in your code with the string of the error. One use for this might be
-validating a forums posting edit box against a small DTD of HTML-like elements. You can
-use XML::LibXML to do this, like this:
+Validate the contents of the textarea. If the contents are somehow invalid,
+throw an exception in your code with the string of the error. One use for
+this might be validating a forums posting edit box against a small DTD of
+HTML-like elements. You can use XML::LibXML to do this, like this:
 
   sub validate_body {
     my ($ctxt, $value) = @_;
@@ -1303,8 +1397,8 @@ use XML::LibXML to do this, like this:
 
 A drop-down select list of items.
 
-The single-select and multi-select (below) elements can be populated either by callbacks
-or through embedded elements.
+The single-select and multi-select (below) elements can be populated either
+by callbacks or through embedded elements.
 
 B<Attributes:>
 
@@ -1321,6 +1415,12 @@ The default value that is to be selected.
 =item index
 
 Use this to identify the array index when using arrayed form elements.
+
+=item onchange
+
+This is a javascript callback implemented on the client side in HTML 4.0
+capable browsers. It simply passes the value through to the generated
+HTML.
 
 =back
 
@@ -1353,12 +1453,13 @@ B<Callbacks:>
 
 =item load_<name> ( $ctxt, $currently_selected )
 
-The return values for this callback both populate the list, and define which value
-is selected.
+The return values for this callback both populate the list, and define which
+value is selected.
 
 The return set is a simple list: selected, text, value, text, value, ...
 
-Where selected matches a B<value> from that list. So, for example, it might be:
+Where selected matches a B<value> from that list. So, for example, it might
+be:
 
   sub load_list {
       my ($ctxt, $current) = @_;
@@ -1371,7 +1472,8 @@ Where selected matches a B<value> from that list. So, for example, it might be:
 
 =item validate_<name> ( $ctxt, $value )
 
-Validate the value. Throw an exception with the text of the error if something is wrong.
+Validate the value. Throw an exception with the text of the error if
+something is wrong.
 
 =back
 
@@ -1389,13 +1491,19 @@ The name of the multiple select widget.
 
 =item default
 
-The default value that is to be selected.  This can be specified as
-a child element (e.g. <f:default>) in order to indicate multiple
-default values.
+The default value that is to be selected.  This can be specified as a child
+element (e.g. <f:default>) in order to indicate multiple default values.
 
 =item index
 
 Use this to identify the array index when using arrayed form elements.
+
+=item onclick
+
+This attribute is intended to be passed through to the generated
+output for client-side onClick routines (usually written in javascript).
+Simply specify a string as you would if writing dynamic html
+forms in plain HTML.
 
 =back
 
@@ -1410,13 +1518,14 @@ B<Callbacks:>
 
 =item load_<name> ( $ctxt, $currently_selected )
 
-This works very similarly to the load callback for single selects (above), except that
-both the $currently_selected, and the returned selected value are array refs.
+This works very similarly to the load callback for single selects (above),
+except that both the $currently_selected, and the returned selected value
+are array refs.
 
 =item validate_<name> ( $ctxt, $values )
 
-Here $values is an array ref of the selected values. As usual, if one is in error somehow,
-throw an exception containing the text of the error.
+Here $values is an array ref of the selected values. As usual, if one is in
+error somehow, throw an exception containing the text of the error.
 
 =back
 

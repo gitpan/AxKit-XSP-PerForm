@@ -1,5 +1,8 @@
 Revision history for Perl extension AxKit::XSP::PerForm.
 
+1.8.2
+    - Add disabled, onclick and onchange attributes to each element
+
 1.8.1
     - Really fix the problem with select boxes not loading contents on
       a submit.

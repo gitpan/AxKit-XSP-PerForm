@@ -1,5 +1,8 @@
 Revision history for Perl extension AxKit::XSP::PerForm.
 
+1.6
+    - Removed action from form to allow it to work with Session taglib
+
 1.4
     - Documentation added
     - More widgets implemented, some changed around a bit.

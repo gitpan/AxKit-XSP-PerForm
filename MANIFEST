@@ -5,3 +5,4 @@ README
 PerForm.pm
 t/00basic.t
 stylesheets/perform_html.xsl
+stylesheets/perform_html.xps

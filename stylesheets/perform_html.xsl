@@ -15,7 +15,7 @@
 <xsl:template match="textfield">
     <input 
         type="text"
-        name="{@name|name}" 
+        name="{@name|name}{@index|index}" 
         value="{@value|value}" 
         size="{@width|width}" 
         maxlength="{@maxlength|maxlength}" />
@@ -25,7 +25,7 @@
 <xsl:template match="password">
     <input 
         type="password"
-        name="{@name|name}" 
+        name="{@name|name}{@index|index}" 
         value="{@value|value}" 
         size="{@width|width}" 
         maxlength="{@maxlength|maxlength}" />
@@ -35,15 +35,17 @@
 <xsl:template match="checkbox">
     <input
         type="checkbox"
-        name="{@name|name}"
-        value="{@value|value}" />
+        name="{@name|name}{@index|index}"
+        value="{@value|value}">
+      <xsl:if test="@checked = 'checked' or checked = 'checked'"><xsl:attribute name="checked">checked</xsl:attribute></xsl:if>
+    </input>
     <xsl:apply-templates select="error"/>
 </xsl:template>
 
 <xsl:template match="submit_button">
     <input
         type="submit"
-        name="{@name|name}"
+        name="{@name|name}{@index|index}"
         value="{@value|value}" />
     <xsl:apply-templates select="error"/>
 </xsl:template>
@@ -51,7 +53,7 @@
 <xsl:template match="hidden">
     <input
         type="hidden"
-        name="{@name|name}"
+        name="{@name|name}{@index|index}"
         value="{@value|value}" />
 </xsl:template>
 
@@ -71,8 +73,15 @@
     <xsl:apply-templates select="error"/>
 </xsl:template>
 
+<xsl:template match="multi_select">
+  <select multiple="multiple" name="{@name|name}">
+    <xsl:apply-templates select="options/option"/>
+  </select>
+  <xsl:apply-templates select="error"/>
+</xsl:template>
+
 <xsl:template match="textarea">
-    <textarea name="{@name|name}" cols="{@cols|cols}" rows="{@rows|rows}">
+    <textarea name="{@name|name}{@index|index}" cols="{@cols|cols}" rows="{@rows|rows}">
     <xsl:if test="@wrap|wrap"><xsl:attribute name="wrap">physical</xsl:attribute></xsl:if>
     <xsl:value-of select="@value|value"/>
     </textarea> <br />

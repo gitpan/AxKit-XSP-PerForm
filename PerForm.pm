@@ -1,8 +1,8 @@
-# $Id: PerForm.pm,v 1.7 2001/07/05 20:32:35 matt Exp $
+# $Id: PerForm.pm,v 1.11 2002/06/11 07:43:00 matt Exp $
 
 package AxKit::XSP::PerForm;
 
-$VERSION = "1.4";
+$VERSION = "1.6";
 
 use AxKit 1.4;
 use Apache;
@@ -14,14 +14,14 @@ $NS = 'http://axkit.org/NS/xsp/perform/v1';
 @ISA = qw(Apache::AxKit::Language::XSP);
 
 @EXPORT_TAGLIB = (
-    'textfield($name;$default,$width,$maxlength)',
-    'password($name;$default,$width,$maxlength)',
-    'submit($name;$value,$image,$alt,$border,$align,$goto)',
-    'cancel($name;$value,$image,$alt,$border,$align,$goto)',
-    'checkbox($name;$value,$checked,$label)',
+    'textfield($name;$default,$width,$maxlength,$index)',
+    'password($name;$default,$width,$maxlength,$index)',
+    'submit($name;$value,$image,$alt,$border,$align,$goto,$index)',
+    'cancel($name;$value,$image,$alt,$border,$align,$goto,$index)',
+    'checkbox($name;$value,$checked,$label,$index)',
     'file_upload($name;$value,$accept)',
-    'hidden($name;$value)',
-    'textarea($name;$cols,$rows,$wrap,$default)',
+    'hidden($name;$value,$index)',
+    'textarea($name;$cols,$rows,$wrap,$default,$index)',
     'single_select($name):itemtag=option',
     'multi_select($name):itemtag=option',
 );
@@ -43,11 +43,15 @@ sub parse_start {
             NamespaceURI => "",
             Attributes => [
                 { Name => "name", Value => $attribs{name} },
-                { Name => "action", Value => Apache->request->uri },
                 { Name => "method", Value => "POST" },
                 { Name => "enctype", Value => "multipart/form-data" },
             ],
         };
+#MSS
+#        if (Apache->args) {
+#	    $form_el->{Attributes}[1]{Value} .='?'.Apache->args;
+#        }
+#end MSS
         
         $e->start_element($form_el);
         
@@ -64,12 +68,14 @@ sub parse_start {
         
         return <<EOT
 {        
-use vars qw(\$_form_ctxt \@_submit_buttons \%_submit_goto \@_cancel_buttons \%_cancel_goto);
+use vars qw(\$_form_ctxt \@_submit_buttons \%_submit_goto \%_submit_index \@_cancel_buttons \%_cancel_goto \%_cancel_index );
 local \$_form_ctxt = { Form => \$cgi->parms, Apache => \$r };
 local \@_submit_buttons;
 local \@_cancel_buttons;
 local \%_submit_goto;
 local \%_cancel_goto;
+local \%_submit_index;
+local \%_cancel_index;
 start_form_$attribs{name}(\$_form_ctxt, \$cgi->param('__submitting'))
           if defined \&start_form_$attribs{name};
 EOT
@@ -102,14 +108,16 @@ sub end_element {
 end_form_${name}(\$_form_ctxt, \$cgi->param('__submitting'))
         if defined \&end_form_${name};
 
+#warn("submitting? ".(\$cgi->param('__submitting')?"yes":"no").", failed? ".(\$_form_ctxt->{_Failed}?"yes":"no"));
+
 if (\$cgi->param('__submitting')) {
     foreach my \$cancel (\@_cancel_buttons) {
         if (\$cgi->param(\$cancel)) {
             no strict 'refs';
             my \$redirect;
             \$redirect = \$_cancel_goto{\$cancel};
-            \$redirect = "cancel_\${cancel}"->(\$_form_ctxt)
-                    if defined \&{"cancel_\${cancel}"};
+            \$redirect = "cancel_\$_cancel_index{\$cancel}{'name'}"->(\$_form_ctxt, \$_cancel_index{\$cancel}{'index'})
+                    if defined \&{"cancel_\$_cancel_index{\$cancel}{'name'}"};
             if (\$redirect) {
                 AxKit::XSP::WebUtils::redirect(\$redirect);
             }
@@ -118,19 +126,20 @@ if (\$cgi->param('__submitting')) {
 }
 
 if (\$cgi->param('__submitting') && !\$_form_ctxt->{_Failed}) {
-    foreach my \$submit (\@_submit_buttons) {
+     foreach my \$submit (\@_submit_buttons) {
         if (\$cgi->param(\$submit)) {
             no strict 'refs';
             my \$redirect;
             \$redirect = \$_submit_goto{\$submit};
-            \$redirect = "submit_\${submit}"->(\$_form_ctxt) 
-                    if defined \&{"submit_\${submit}"};
+            \$redirect = "submit_\$_submit_index{\$submit}{'name'}"->(\$_form_ctxt, \$_submit_index{\$submit}{'index'}) 
+                    if defined \&{"submit_\$_submit_index{\$submit}{'name'}"};
             if (\$redirect) {
                 AxKit::XSP::WebUtils::redirect(\$redirect);
             }
         }
     }
 }
+
 
 }
 EOT
@@ -140,8 +149,8 @@ EOT
     }
 }
 
-sub textfield ($;$$$) {
-    my ($name, $default, $width, $maxlength) = @_;
+sub textfield ($;$$$$) {
+    my ($name, $default, $width, $maxlength, $index) = @_;
     my ($package) = caller;
     
     no strict 'refs';
@@ -156,7 +165,7 @@ sub textfield ($;$$$) {
     if ($params->{'__submitting'}) {
         if (defined &{"${package}::validate_${name}"}) {
             eval {
-                "${package}::validate_${name}"->($ctxt, $params->{$name});
+                "${package}::validate_${name}"->($ctxt, $params->{$name.$index}, $index);
             };
             $error = $@;
             $ctxt->{_Failed}++ if $error;
@@ -166,10 +175,10 @@ sub textfield ($;$$$) {
     
     # load
     if (defined &{"${package}::load_${name}"}) {
-        $params->{$name} = "${package}::load_${name}"->($ctxt, $default, $params->{$name});
+        $params->{$name.$index} = "${package}::load_${name}"->($ctxt, $default, $params->{$name.$index}, $index);
     }
     elsif (!$params->{'__submitting'}) {
-        $params->{$name} = $default;
+        $params->{$name.$index} = $default;
     }
     
     return {
@@ -177,14 +186,15 @@ sub textfield ($;$$$) {
             width => $width,
             maxlength => $maxlength,
             name => $name,
-            value => $params->{$name},
+            value => $params->{$name.$index},
+	    index => $index,
             ($error ? (error => $error) : ()),
             }
         };
 }
 
-sub submit ($;$$$$$$) {
-    my ($name, $value, $image, $alt, $border, $align, $goto) = @_;
+sub submit ($;$$$$$$$) {
+    my ($name, $value, $image, $alt, $border, $align, $goto, $index) = @_;
     my ($package) = caller;
     
     no strict 'refs';
@@ -192,8 +202,10 @@ sub submit ($;$$$$$$) {
     my $ctxt = ${"${package}::_form_ctxt"};
     my $params = $ctxt->{Form};
     
-    push @{"${package}::_submit_buttons"}, $name;
-    ${"${package}::_submit_goto"}{$name} = $goto if $goto;
+    push @{"${package}::_submit_buttons"}, "$name$index";
+    ${"${package}::_submit_goto"}{$name.$index} = $goto if $goto;
+    ${"${package}::_submit_index"}{$name.$index}{'index'} = $index;
+    ${"${package}::_submit_index"}{$name.$index}{'name'} = $name;
     
     # save
     if ($image) {
@@ -205,6 +217,7 @@ sub submit ($;$$$$$$) {
                 alt => $alt,
                 border => $border || 0,
                 align => $align || "bottom",
+		index => $index,
             }
         };
     }
@@ -213,13 +226,14 @@ sub submit ($;$$$$$$) {
             submit_button => {
                 name => $name,
                 value => $value,
+		index => $index,
             }
         };
     }
 }
 
-sub cancel ($;$$$$$$) {
-    my ($name, $value, $image, $alt, $border, $align, $goto) = @_;
+sub cancel ($;$$$$$$$) {
+    my ($name, $value, $image, $alt, $border, $align, $goto, $index) = @_;
     my ($package) = caller;
     
     no strict 'refs';
@@ -227,8 +241,10 @@ sub cancel ($;$$$$$$) {
     my $ctxt = ${"${package}::_form_ctxt"};
     my $params = $ctxt->{Form};
     
-    push @{"${package}::_cancel_buttons"}, $name;
-    ${"${package}::_cancel_goto"}{$name} = $goto if $goto;
+    push @{"${package}::_cancel_buttons"}, $name.$index;
+    ${"${package}::_cancel_goto"}{$name.$index} = $goto if $goto;
+    ${"${package}::_cancel_index"}{$name.$index}{'index'} = $index;
+    ${"${package}::_cancel_index"}{$name.$index}{'name'} = $name;
     
     # save
     if ($image) {
@@ -240,6 +256,7 @@ sub cancel ($;$$$$$$) {
                 alt => $alt,
                 border => $border || 0,
                 align => $align || "bottom",
+		index => $index,
             }
         };
     }
@@ -248,13 +265,14 @@ sub cancel ($;$$$$$$) {
             submit_button => {
                 name => $name,
                 value => $value,
+		index => $index,
             }
         };
     }
 }
 
-sub button ($;$) {
-    my ($name, $value) = @_;
+sub button ($;$$) {
+    my ($name, $value, $index) = @_;
     
     my ($package) = caller;
     
@@ -266,8 +284,8 @@ sub button ($;$) {
     # TODO: What do we want buttons to do?
 }
 
-sub checkbox ($;$$$) {
-    my ($name, $value, $checked, $label) = @_;
+sub checkbox ($;$$$$) {
+    my ($name, $value, $checked, $label, $index) = @_;
     my ($package) = caller;
     
     no strict 'refs';
@@ -282,7 +300,7 @@ sub checkbox ($;$$$) {
     if ($params->{'__submitting'}) {
         if (defined &{"${package}::validate_${name}"}) {
             eval {
-                "${package}::validate_${name}"->($ctxt, $params->{$name});
+                "${package}::validate_${name}"->($ctxt, $params->{$name.$index}, $index);
             };
             $error = $@;
             $ctxt->{_Failed}++ if $error;
@@ -294,12 +312,12 @@ sub checkbox ($;$$$) {
     
     # load
     if (defined &{"${package}::load_${name}"}) {
-        my @vals = "${package}::load_${name}"->($ctxt, $params->{$name});
+        my @vals = "${package}::load_${name}"->($ctxt, $params->{$name.$index}, $index);
         $checked = shift @vals;
         $value = shift @vals if @vals;
     }
     elsif ($params->{'__submitting'}) {
-        $checked = 1 if defined($params->{$name});
+        $checked = 1 if defined($params->{$name.$index});
     }
     
     if ($checked && $checked eq 'yes') {
@@ -316,6 +334,7 @@ sub checkbox ($;$$$) {
             ( $checked ? (checked => "checked") : () ),
             label => $label,
             ( $error ? (error => $error) : () ),
+	    index => $index,
         }
     };
 }
@@ -381,29 +400,28 @@ sub file_upload ($;$$) {
     };
 }
 
-sub hidden ($;$) {
-    my ($name, $value) = @_;
+sub hidden ($;$$) {
+    my ($name, $value, $index) = @_;
     my ($package) = caller;
     
     no strict 'refs';
     
     my $ctxt = ${"${package}::_form_ctxt"};
-    
     my $params = $ctxt->{Form};
-    
+
     if (!defined($value) && defined &{"${package}::load_${name}"}) {
-        # load value if not defined
-        $value = "${package}::load_${name}"->($ctxt, $value);
+	# load value if not defined
+	$value = "${package}::load_${name}"->($ctxt, $value, $index);
     }
-    
-    if ($params->{'__submitting'} && ($value ne $params->{$name})) {
-        die "Someone tried to change your hidden form value!";
+    if ($params->{'__submitting'} && ($value ne $params->{$name.$index})) {
+	die "Someone tried to change your hidden form value!";
     }
-    
+
     return {
-        hidden => {
+	hidden => {
             name => $name,
             value => $value,
+	    index => $index,
         }
     };
 }
@@ -464,8 +482,8 @@ sub multi_select ($) {
     };
 }
 
-sub password ($;$$$) {
-    my ($name, $default, $width, $maxlength) = @_;
+sub password ($;$$$$) {
+    my ($name, $default, $width, $maxlength, $index) = @_;
     my ($package) = caller;
     
     no strict 'refs';
@@ -480,7 +498,7 @@ sub password ($;$$$) {
     if ($params->{'__submitting'}) {
         if (defined &{"${package}::validate_${name}"}) {
             eval {
-                "${package}::validate_${name}"->($ctxt, $params->{$name});
+                "${package}::validate_${name}"->($ctxt, $params->{$name,$index}, $index);
             };
             $error = $@;
             $ctxt->{_Failed}++ if $error;
@@ -490,10 +508,10 @@ sub password ($;$$$) {
     
     # load
     if (defined &{"${package}::load_${name}"}) {
-        $params->{$name} = "${package}::load_${name}"->($ctxt, $default, $params->{$name});
+        $params->{$name.$index} = "${package}::load_${name}"->($ctxt, $default, $params->{$name,$index}, $index);
     }
     elsif (!$params->{'__submitting'}) {
-        $params->{$name} = $default;
+        $params->{$name.$index} = $default;
     }
     
     return {
@@ -503,6 +521,7 @@ sub password ($;$$$) {
             name => $name,
             value => $params->{$name},
             ($error ? (error => $error) : ()),
+	    index => $index,
             }
         };
 }
@@ -576,8 +595,8 @@ sub single_select ($) {
     };
 }
 
-sub textarea ($;$$$$) {
-    my ($name, $cols, $rows, $wrap, $default) = @_;
+sub textarea ($;$$$$$) {
+    my ($name, $cols, $rows, $wrap, $default, $index) = @_;
     
     my ($package) = caller;
     
@@ -593,7 +612,7 @@ sub textarea ($;$$$$) {
     if ($params->{'__submitting'}) {
         if (defined &{"${package}::validate_${name}"}) {
             eval {
-                "${package}::validate_${name}"->($ctxt, $params->{$name});
+                "${package}::validate_${name}"->($ctxt, $params->{$name.$index}, $index);
             };
             $error = $@;
             $ctxt->{_Failed}++ if $error;
@@ -603,10 +622,10 @@ sub textarea ($;$$$$) {
     
     # load
     if (defined &{"${package}::load_${name}"}) {
-        $params->{$name} = "${package}::load_${name}"->($ctxt, $default, $params->{$name});
+        $params->{$name.$index} = "${package}::load_${name}"->($ctxt, $default, $params->{$name.$index}, $index);
     }
     elsif (!$params->{'__submitting'}) {
-        $params->{$name} = $default;
+        $params->{$name.$index} = $default;
     }
     
     if ($wrap) {
@@ -626,6 +645,7 @@ sub textarea ($;$$$$) {
             name => $name,
             value => $params->{$name},
             ($error ? (error => $error) : ()),
+	    index => $index,
             }
         };
 }
@@ -677,8 +697,8 @@ object for the current request.
 
   sub validate_firstname {
       my ($ctxt, $value) = @_;
-      $value =~ s/^\s*/;
-      $value =~ s/\s*$/;
+      $value =~ s/^\s*//;
+      $value =~ s/\s*$//;
       die "No value" unless $value;
       die "Invalid firstname - non word character not allowed"
                 if $value =~ /\W/;
@@ -759,6 +779,42 @@ To add an entry to the context object, simply use it as a hashref:
   $ctxt->{my_key} = $my_value;
 
 And you can later get at that in another callback via C<$ctxt->{my_key}>.
+
+=head1 ARRAYED FORM ELEMENTS
+
+Sometimes you need to display a list of items in your form where the 
+number of items is not known until runtime.  Use arrayed form elements to trigger 
+the same callback for each item in the list.  When setting up each element, use 
+an index to identify each member of the list.  The callbacks will be passed the 
+index as a parameter.  e.g.
+
+Your form may have a section like this:
+
+  <xsp:logic>
+  for $index (0..$#shoppinglist) {
+    <p>
+        <xsp:expr>$shoppinglist[$index]</xsp:expr>
+        <f:submit name="SubmitBuy" value="Buy me">
+            <f:index><xsp:expr>$index</xsp:expr></f:index>
+        </f:submit>
+    </p>
+  }
+  </xsp:logic>
+
+The submit callback might be:
+
+  sub submit_SubmitBuy {
+    my ($ctxt, $index) = @_;
+    return "purchase.xsp?item=$index";
+  }
+
+This example produces a list of items with a 'Buy me' button next to each one.  Each 
+button has an index that corresponds an array index of an item in the shopping list.
+When one of the submit buttons is pressed, the submit_SubmitBuy callback will be 
+triggered (as part of the submission procedure) and the browser will redirect to a page
+that handles the purchase of the associated item.
+
+NOTE: arrays not supported for multi-select, single-select or file-upload elements.
 
 =head1 TAG DOCUMENTATION
 
@@ -854,16 +910,23 @@ attribute to a URI to redirect to when the user hits the button. Normally
 you won't use this unless you happen to not want to save the form values
 in any way.
 
+=item index
+
+If your button is a member of an array, then set the index attribute to the
+corresponding array index.
+
 =back
 
 B<Callbacks:>
 
 =over 4
 
-=item submit_<name> ( $ctxt )
+=item submit_<name> ( $ctxt , $index )
 
 This callback is used to "do something" with the submitted form values. You
 might write them to a database or a file, or change something in your application.
+
+The $index parameter identifies which button was pressed in an array of buttons.
 
 The return value from submit_<name> is used to redirect the user to the "next"
 page, whatever that might be.
@@ -885,7 +948,7 @@ B<Callbacks:>
 
 =over 4
 
-=item cancel_<name> ( $ctxt )
+=item cancel_<name> ( $ctxt, $index )
 
 Implement this method to override the goto attribute. Return the URI you want to redirect
 to. This can be used to dynamically generate the URI to redirect to.
@@ -919,13 +982,18 @@ method - for HTML this would be em characters.
 
 The maximum number of characters you can enter into this text field.
 
+=item index
+
+If your text field is a member of an array, then set the index attribute to the
+corresponding array index.
+
 =back
 
 B<Callbacks:>
 
 =over 4
 
-=item load_<name> ( $ctxt, $default, $current )
+=item load_<name> ( $ctxt, $default, $current, $index )
 
 Used to load a value into the edit box. The default is from the attributes above. The
 current value is only set if this form has been submitted once already, and contains
@@ -933,10 +1001,12 @@ the value submitted.
 
 Simply return the value you want to appear in the textfield.
 
+If the text field is a memeber of an array, then $index will be the array index.
+
 If you do not implement this method, the value in the textfield defaults to
 C<$current || $default>.
 
-=item validate_<name> ( $ctxt, $value )
+=item validate_<name> ( $ctxt, $value, $index )
 
 Implement this method to validate the contents of the textfield. If the value is valid,
 you don't need to do anything. However if it invalid, throw an exception with the reason
@@ -950,6 +1020,8 @@ why it is invalid. Example:
       die "No value" unless length $value;
       die "Invalid characters" if $value =~ /\W/;
   }
+
+If the text field is a memeber of an array, then $index will be the array index.
 
 =back
 
@@ -984,13 +1056,17 @@ off altogether to have it unchecked.
 Used in HTML 4.0, the label for the checkbox. Use this with care as most browsers
 don't support it.
 
+=item index
+
+Use this to identify the array index when using arrayed form elements.
+
 =back
 
 B<Callbacks:>
 
 =over 4
 
-=item load_<name> ( $ctxt, $current )
+=item load_<name> ( $ctxt, $current, $index )
 
 If you implement this method, you can change the default checked state of the
 checkbox, and the value returned by the checkbox if you need to.
@@ -999,7 +1075,7 @@ Return one or two values. The first value is whether the box is checked or not,
 and the second optional value is what value is sent to the server when the checkbox
 is checked and submitted.
 
-=item validate_<name> ( $ctxt, $value )
+=item validate_<name> ( $ctxt, $value, $index )
 
 Validate the value in the checkbox. Throw an exception to indicate validation failure.
 
@@ -1069,13 +1145,17 @@ The name of the hidden field
 
 The value stored in the hidden field
 
+=item index
+
+Use this to identify the array index when using arrayed form elements.
+
 =back
 
 B<Callbacks:>
 
 =over 4
 
-=item load_<name> ( $ctxt, $default )
+=item load_<name> ( $ctxt, $default, $index )
 
 If you wish the value to be dynamic somehow, implement this callback and return a
 new value for the hidden field.
@@ -1113,17 +1193,21 @@ Set this to "yes" or "1" to have the textarea wrap the text automatically. Set t
 
 The default text to put in the textarea.
 
+=item index
+
+Use this to identify the array index when using arrayed form elements.
+
 =back
 
 B<Callbacks:>
 
 =over 4
 
-=item load_<name> ( $ctxt, $default, $current )
+=item load_<name> ( $ctxt, $default, $current, $index )
 
 Load a new value into the widget. Return the string you want to appear in the box.
 
-=item validate_<name> ( $ctxt, $value )
+=item validate_<name> ( $ctxt, $value, $index )
 
 Validate the contents of the textarea. If the contents are somehow invalid, throw
 an exception in your code with the string of the error. One use for this might be
